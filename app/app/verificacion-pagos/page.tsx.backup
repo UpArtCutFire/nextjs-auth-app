@@ -1,0 +1,592 @@
+
+'use client';
+
+import { useSession } from 'next-auth/react';
+import { useRouter } from 'next/navigation';
+import { useEffect, useState } from 'react';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { DashboardLayout } from '@/components/dashboard-layout';
+import { 
+  CreditCard, 
+  Banknote, 
+  Smartphone, 
+  TrendingUp, 
+  CheckCircle2, 
+  XCircle, 
+  Clock,
+  Calendar,
+  DollarSign,
+  FileText,
+  Filter,
+  Download,
+  Eye
+} from 'lucide-react';
+import { format } from 'date-fns';
+import { es } from 'date-fns/locale';
+import { toast } from 'sonner';
+
+interface PaymentConsolidation {
+  totalsByMethod: {
+    efectivo: number;
+    transferencia: number;
+    webpay: number;
+    total: number;
+  };
+  documentDetails: DocumentPaymentStatus[];
+  summary: {
+    totalDocuments: number;
+    documentsWithPayment: number;
+    documentsWithoutPayment: number;
+    verificationPercentage: number;
+  };
+}
+
+interface DocumentPaymentStatus {
+  documentNumber: string;
+  documentType: string;
+  documentDate: string;
+  clientName: string;
+  amount: number;
+  vendorCode: string;
+  hasPaymentVerification: boolean;
+  paymentMethod?: string;
+  paymentVerificationDate?: Date;
+  paymentComment?: string;
+  photoUrl?: string;
+  status: 'verified' | 'missing' | 'pending';
+}
+
+export default function VerificacionPagosPage() {
+  const { data: session, status } = useSession();
+  const router = useRouter();
+  
+  const [consolidation, setConsolidation] = useState<PaymentConsolidation | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [ciSession, setCiSession] = useState<string | null>(null);
+  const [dateFrom, setDateFrom] = useState<string>('');
+  const [dateTo, setDateTo] = useState<string>('');
+  const [filterStatus, setFilterStatus] = useState<'all' | 'verified' | 'missing'>('all');
+  const [searchTerm, setSearchTerm] = useState('');
+
+  // Credenciales ERP (mismas que documentos y comisiones)
+  const erpCredentials = {
+    txtrutempresa: '77261114-5',
+    txtusuario: '18221084-6',
+    txtpwd: 'Rguz0608'
+  };
+
+  // Función para autenticar con ERP
+  const authenticateERP = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      // Paso 1: Autenticación inicial
+      const authResponse = await fetch('/api/erp/auth', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(erpCredentials),
+      });
+
+      const authData = await authResponse.json();
+      
+      if (!authData.success) {
+        throw new Error(authData.error || 'Error en autenticación');
+      }
+
+      // Paso 2: Obtener sesión
+      const sessionResponse = await fetch('/api/erp/session', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ redirectUrl: authData.redirectUrl }),
+      });
+
+      const sessionData = await sessionResponse.json();
+      
+      if (!sessionData.success) {
+        throw new Error(sessionData.error || 'Error obteniendo sesión');
+      }
+
+      setCiSession(sessionData.ci_session);
+      toast.success('Autenticación ERP exitosa');
+      
+      // Cargar consolidación automáticamente después de autenticar
+      await fetchConsolidation(sessionData.ci_session);
+      
+    } catch (error) {
+      console.error('Error autenticando ERP:', error);
+      setError(error instanceof Error ? error.message : 'Error de autenticación');
+      toast.error('Error en autenticación ERP');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Verificar autorización
+  useEffect(() => {
+    if (status === 'loading') return;
+    
+    if (!session) {
+      router.push('/login');
+      return;
+    }
+
+    const user = session.user as any;
+    if (user.perfil !== 'administrador') {
+      router.push('/dashboard');
+      return;
+    }
+  }, [session, status, router]);
+
+  // Configurar fechas por defecto (último mes) y autenticación automática
+  useEffect(() => {
+    const today = new Date();
+    const lastMonth = new Date();
+    lastMonth.setMonth(lastMonth.getMonth() - 1);
+    
+    setDateFrom(format(lastMonth, 'yyyy-MM-dd'));
+    setDateTo(format(today, 'yyyy-MM-dd'));
+
+    // Autenticación automática al montar el componente
+    authenticateERP();
+  }, []);
+
+  // Efecto para aplicar filtros cuando cambien las fechas (con debounce)
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      if (ciSession && dateFrom && dateTo) {
+        fetchConsolidation();
+      }
+    }, 500);
+
+    return () => clearTimeout(timeoutId);
+  }, [dateFrom, dateTo, ciSession]);
+
+  // Obtener datos de consolidación
+  const fetchConsolidation = async (sessionId?: string) => {
+    const sessionToUse = sessionId || ciSession;
+    if (!sessionToUse) {
+      toast.error('Sesión ERP no disponible');
+      return;
+    }
+    
+    setLoading(true);
+    setError(null);
+
+    try {
+      const params = new URLSearchParams({
+        ci_session: sessionToUse,
+        ...(dateFrom && { dateFrom }),
+        ...(dateTo && { dateTo }),
+      });
+
+      const response = await fetch(`/api/payment-consolidation?${params}`);
+      const data = await response.json();
+
+      if (!data.success) {
+        throw new Error(data.error || 'Error obteniendo consolidación');
+      }
+
+      setConsolidation(data.consolidation);
+      toast.success('Consolidación actualizada');
+    } catch (err) {
+      console.error('Error fetching consolidation:', err);
+      setError(err instanceof Error ? err.message : 'Error desconocido');
+      toast.error('Error obteniendo consolidación');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Filtrar documentos
+  const filteredDocuments = consolidation?.documentDetails?.filter((doc) => {
+    // Filtro por estado
+    if (filterStatus !== 'all') {
+      if (filterStatus === 'verified' && !doc.hasPaymentVerification) return false;
+      if (filterStatus === 'missing' && doc.hasPaymentVerification) return false;
+    }
+
+    // Filtro por término de búsqueda
+    if (searchTerm) {
+      const searchLower = searchTerm.toLowerCase();
+      return (
+        doc.documentNumber.toLowerCase().includes(searchLower) ||
+        doc.clientName.toLowerCase().includes(searchLower) ||
+        doc.vendorCode.toLowerCase().includes(searchLower)
+      );
+    }
+
+    return true;
+  }) || [];
+
+  // Formatear moneda
+  const formatCurrency = (amount: number) => {
+    return new Intl.NumberFormat('es-CL', {
+      style: 'currency',
+      currency: 'CLP',
+    }).format(amount);
+  };
+
+  // Función auxiliar para renderizar estado de pago
+  const renderPaymentStatus = (status: string, paymentMethod?: string) => {
+    if (status === 'verified') {
+      return (
+        <Badge variant="default" className="bg-green-100 text-green-800">
+          <CheckCircle2 className="w-3 h-3 mr-1" />
+          Verificado
+          {paymentMethod && ` (${paymentMethod})`}
+        </Badge>
+      );
+    }
+    
+    return (
+      <Badge variant="destructive">
+        <XCircle className="w-3 h-3 mr-1" />
+        Sin verificar
+      </Badge>
+    );
+  };
+
+  if (status === 'loading') {
+    return (
+      <DashboardLayout>
+        <div className="space-y-6">
+          <Skeleton className="h-8 w-64" />
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <Skeleton key={i} className="h-32" />
+            ))}
+          </div>
+          <Skeleton className="h-64" />
+        </div>
+      </DashboardLayout>
+    );
+  }
+
+  return (
+    <DashboardLayout>
+      <div className="space-y-6">
+        {/* Header */}
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold">Verificación de Pagos</h1>
+            <p className="text-muted-foreground">
+              Consolidado de pagos verificados y documentos pendientes
+            </p>
+          </div>
+          <Button
+            onClick={() => fetchConsolidation()}
+            disabled={loading}
+            className="min-w-[120px]"
+          >
+            {loading ? (
+              <>
+                <Clock className="w-4 h-4 mr-2 animate-spin" />
+                Cargando...
+              </>
+            ) : (
+              <>
+                <TrendingUp className="w-4 h-4 mr-2" />
+                Actualizar
+              </>
+            )}
+          </Button>
+        </div>
+
+        {/* Filtros */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Calendar className="h-5 w-5" />
+              Filtros de Búsqueda
+            </CardTitle>
+            <CardDescription>
+              Los filtros se aplican automáticamente al cambiar las fechas
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="dateFrom">Fecha Desde</Label>
+                <Input
+                  id="dateFrom"
+                  type="date"
+                  value={dateFrom}
+                  onChange={(e) => setDateFrom(e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="dateTo">Fecha Hasta</Label>
+                <Input
+                  id="dateTo"
+                  type="date"
+                  value={dateTo}
+                  onChange={(e) => setDateTo(e.target.value)}
+                />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+Ahora voy a probar la aplicación para ver si funciona correctamente:
+
+<tool>
+<tool_name>test_nextjs_project</tool_name>
+<params.project_path>/home/ubuntu/nextjs-auth-app
+
+        {/* Error */}
+        {error && (
+          <Alert variant="destructive">
+            <XCircle className="h-4 w-4" />
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
+
+        {/* Cards de Totales */}
+        {consolidation && (
+          <>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+              <Card>
+                <CardContent className="p-6">
+                  <div className="flex items-center space-x-4">
+                    <div className="bg-green-100 p-3 rounded-full">
+                      <Banknote className="h-6 w-6 text-green-600" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-muted-foreground">Efectivo</p>
+                      <p className="text-2xl font-bold">{formatCurrency(consolidation.totalsByMethod.efectivo)}</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardContent className="p-6">
+                  <div className="flex items-center space-x-4">
+                    <div className="bg-blue-100 p-3 rounded-full">
+                      <CreditCard className="h-6 w-6 text-blue-600" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-muted-foreground">Transferencia</p>
+                      <p className="text-2xl font-bold">{formatCurrency(consolidation.totalsByMethod.transferencia)}</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardContent className="p-6">
+                  <div className="flex items-center space-x-4">
+                    <div className="bg-purple-100 p-3 rounded-full">
+                      <Smartphone className="h-6 w-6 text-purple-600" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-muted-foreground">WebPay</p>
+                      <p className="text-2xl font-bold">{formatCurrency(consolidation.totalsByMethod.webpay)}</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardContent className="p-6">
+                  <div className="flex items-center space-x-4">
+                    <div className="bg-orange-100 p-3 rounded-full">
+                      <DollarSign className="h-6 w-6 text-orange-600" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-muted-foreground">Total</p>
+                      <p className="text-2xl font-bold">{formatCurrency(consolidation.totalsByMethod.total)}</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Resumen */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center space-x-2">
+                  <TrendingUp className="h-5 w-5" />
+                  <span>Resumen de Verificación</span>
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                  <div className="text-center">
+                    <p className="text-2xl font-bold text-blue-600">{consolidation.summary.totalDocuments}</p>
+                    <p className="text-sm text-muted-foreground">Total Documentos</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-2xl font-bold text-green-600">{consolidation.summary.documentsWithPayment}</p>
+                    <p className="text-sm text-muted-foreground">Con Verificación</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-2xl font-bold text-red-600">{consolidation.summary.documentsWithoutPayment}</p>
+                    <p className="text-sm text-muted-foreground">Sin Verificación</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-2xl font-bold text-purple-600">{consolidation.summary.verificationPercentage}%</p>
+                    <p className="text-sm text-muted-foreground">% Verificado</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Filtros de Grid */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Detalle de Documentos</CardTitle>
+                <CardDescription>
+                  Documentos que requieren verificación de pago (con referencias tipo 33 o 39)
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex flex-col md:flex-row gap-4">
+                  <div className="flex-1">
+                    <Input
+                      placeholder="Buscar por número, cliente o vendedor..."
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                    />
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      variant={filterStatus === 'all' ? 'default' : 'outline'}
+                      size="sm"
+                      onClick={() => setFilterStatus('all')}
+                    >
+                      Todos ({consolidation.documentDetails.length})
+                    </Button>
+                    <Button
+                      variant={filterStatus === 'verified' ? 'default' : 'outline'}
+                      size="sm"
+                      onClick={() => setFilterStatus('verified')}
+                    >
+                      <CheckCircle2 className="w-4 h-4 mr-1" />
+                      Verificados ({consolidation.summary.documentsWithPayment})
+                    </Button>
+                    <Button
+                      variant={filterStatus === 'missing' ? 'default' : 'outline'}
+                      size="sm"
+                      onClick={() => setFilterStatus('missing')}
+                    >
+                      <XCircle className="w-4 h-4 mr-1" />
+                      Faltantes ({consolidation.summary.documentsWithoutPayment})
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Tabla de documentos */}
+                <div className="rounded-md border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Documento</TableHead>
+                        <TableHead>Fecha</TableHead>
+                        <TableHead>Cliente</TableHead>
+                        <TableHead>Vendedor</TableHead>
+                        <TableHead className="text-right">Monto</TableHead>
+                        <TableHead>Estado Pago</TableHead>
+                        <TableHead>Fecha Verificación</TableHead>
+                        <TableHead>Acciones</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {filteredDocuments.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={8} className="text-center py-8">
+                            <div className="flex flex-col items-center space-y-2">
+                              <FileText className="h-8 w-8 text-muted-foreground" />
+                              <p className="text-muted-foreground">
+                                {searchTerm || filterStatus !== 'all' 
+                                  ? 'No se encontraron documentos con los filtros aplicados'
+                                  : 'No hay documentos en el período seleccionado'
+                                }
+                              </p>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ) : (
+                        filteredDocuments.map((doc, index) => (
+                          <TableRow key={`${doc.documentNumber}-${doc.documentType}-${index}`}>
+                            <TableCell>
+                              <div className="font-medium">{doc.documentNumber}</div>
+                              <div className="text-sm text-muted-foreground">Tipo: {doc.documentType}</div>
+                            </TableCell>
+                            <TableCell>
+                              {doc.documentDate ? format(new Date(doc.documentDate), 'dd/MM/yyyy', { locale: es }) : '-'}
+                            </TableCell>
+                            <TableCell>
+                              <div className="max-w-[200px] truncate" title={doc.clientName}>
+                                {doc.clientName || '-'}
+                              </div>
+                            </TableCell>
+                            <TableCell>{doc.vendorCode || '-'}</TableCell>
+                            <TableCell className="text-right font-medium">
+                              {formatCurrency(doc.amount)}
+                            </TableCell>
+                            <TableCell>
+                              {renderPaymentStatus(doc.status, doc.paymentMethod)}
+                            </TableCell>
+                            <TableCell>
+                              {doc.paymentVerificationDate ? 
+                                format(new Date(doc.paymentVerificationDate), 'dd/MM/yyyy HH:mm', { locale: es }) : 
+                                '-'
+                              }
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex space-x-2">
+                                {doc.photoUrl && (
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => window.open(doc.photoUrl, '_blank')}
+                                  >
+                                    <Eye className="w-4 h-4" />
+                                  </Button>
+                                )}
+                                {doc.paymentComment && (
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    title={doc.paymentComment}
+                                  >
+                                    <FileText className="w-4 h-4" />
+                                  </Button>
+                                )}
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))
+                      )}
+                    </TableBody>
+                  </Table>
+                </div>
+
+                {/* Información de resultados */}
+                {filteredDocuments.length > 0 && (
+                  <div className="text-sm text-muted-foreground">
+                    Mostrando {filteredDocuments.length} de {consolidation.documentDetails.length} documentos
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </>
+        )}
+      </div>
+    </DashboardLayout>
+  );
+}
