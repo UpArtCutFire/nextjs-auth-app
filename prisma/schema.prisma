@@ -1,0 +1,229 @@
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl-arm64-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                   String                @id @default(cuid())
+  nombre               String
+  correo               String                @unique
+  rut                  String                @unique
+  activo               Boolean               @default(true)
+  perfil               String
+  codigo_vendedor      String?
+  porcentaje_comision  Float?
+  comision_base        Float?
+  password             String
+  name                 String?
+  email                String?               @unique
+  emailVerified        DateTime?
+  image                String?
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
+  accounts             Account[]
+  dispatches           Dispatch[]
+  approvedPayments     PaymentVerification[] @relation("PaymentApprover")
+  paymentVerifications PaymentVerification[]
+  sessions             Session[]
+}
+
+model Account {
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([provider, providerAccountId])
+}
+
+model Session {
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String
+  expires    DateTime
+
+  @@id([identifier, token])
+}
+
+model PaymentVerification {
+  id              String        @id @default(cuid())
+  documentNumber  String
+  documentType    String
+  vendorCode      String
+  photoUrl        String?
+  comment         String
+  documentInfo    String
+  paymentMethod   PaymentMethod
+  userId          String
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  amount          Float?
+  approvedAt      DateTime?
+  approvedBy      String?
+  rejectionReason String?
+  status          PaymentStatus @default(PENDING)
+  approver        User?         @relation("PaymentApprover", fields: [approvedBy], references: [id])
+  user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([documentNumber, documentType])
+  @@index([vendorCode])
+  @@index([userId])
+  @@index([status])
+}
+
+model ERPConfig {
+  id            String   @id @default(cuid())
+  txtrutempresa String
+  txtusuario    String
+  txtpwd        String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model Transport {
+  id            String        @id @default(cuid())
+  patente       String        @unique
+  nombre        String
+  talla         TransportSize
+  activo        Boolean       @default(true)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  totalCapacity Int           @default(12)
+  dispatches    Dispatch[]
+}
+
+model Branch {
+  id         String     @id @default(cuid())
+  nombre     String     @unique
+  direccion  String
+  telefono   String?
+  activo     Boolean    @default(true)
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+  dispatches Dispatch[]
+}
+
+model SizeEquivalence {
+  id          String       @id @default(cuid())
+  size        DispatchSize @unique
+  value       Int
+  description String?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+}
+
+model Dispatch {
+  id                    String          @id @default(cuid())
+  documentNumber        String
+  documentType          String
+  vendorCode            String
+  direccion             String?
+  comuna                String?
+  region                String?
+  telefono              String?
+  correo                String?
+  tamanoDespacho        DispatchSize
+  clienteNombre         String
+  userId                String
+  createdAt             DateTime        @default(now())
+  updatedAt             DateTime        @updatedAt
+  scheduledDate         DateTime?
+  scheduledPeriod       String?
+  status                DispatchStatus  @default(PENDING)
+  transportId           String?
+  completedAt           DateTime?
+  driverId              String?
+  startedAt             DateTime?
+  suggestedDeliveryDate DateTime?
+  branchId              String?
+  tipoDespacho          DispatchType    @default(DESPACHO)
+  documentInfo          String?
+  deliveryPhotos        DeliveryPhoto[]
+  branch                Branch?         @relation(fields: [branchId], references: [id])
+  transport             Transport?      @relation(fields: [transportId], references: [id])
+  user                  User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([documentNumber, documentType])
+  @@index([vendorCode])
+  @@index([userId])
+  @@index([status])
+  @@index([transportId])
+  @@index([driverId])
+  @@index([branchId])
+}
+
+model DeliveryPhoto {
+  id         String   @id @default(cuid())
+  dispatchId String
+  photoUrl   String
+  comment    String?
+  createdAt  DateTime @default(now())
+  dispatch   Dispatch @relation(fields: [dispatchId], references: [id], onDelete: Cascade)
+
+  @@index([dispatchId])
+}
+
+enum PaymentMethod {
+  efectivo
+  transferencia
+  webpay
+  flete
+}
+
+enum PaymentStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum TransportSize {
+  S
+  M
+  L
+  XL
+}
+
+enum DispatchSize {
+  S
+  M
+  L
+  XL
+  XXL
+}
+
+enum DispatchType {
+  RETIRO_LOCAL
+  COURIER
+  DESPACHO
+}
+
+enum DispatchStatus {
+  PENDING
+  SCHEDULED
+  IN_TRANSIT
+  DELIVERED
+  CANCELLED
+}

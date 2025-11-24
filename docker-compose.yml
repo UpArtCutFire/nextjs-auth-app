@@ -5,16 +5,16 @@ services:
   postgres:
     image: postgres:15-alpine
     environment:
-      POSTGRES_DB: nextjs_auth_db
-      POSTGRES_USER: nextjs_user
-      POSTGRES_PASSWORD: nextjs_password
+      POSTGRES_DB: auth_app
+      POSTGRES_USER: Underoath
+      POSTGRES_PASSWORD: Tb4a872z-Tb4a872z-
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
       - "5432:5432"
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U nextjs_user -d nextjs_auth_db"]
+      test: ["CMD-SHELL", "pg_isready -U Underoath -d auth_app"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -25,9 +25,9 @@ services:
       - "3000:3000"
     environment:
       - NODE_ENV=production
-      - DATABASE_URL=postgresql://nextjs_user:nextjs_password@postgres:5432/nextjs_auth_db
-      - NEXTAUTH_URL=http://localhost:3000
-      - NEXTAUTH_SECRET=your-nextauth-secret-key-change-this-in-production
+      - DATABASE_URL=postgresql://Underoath:Tb4a872z-Tb4a872z-@postgres:5432/auth_app
+      - NEXTAUTH_URL=https://appsidingpro.cl
+      - NEXTAUTH_SECRET=Cotarola1988--
     depends_on:
       postgres:
         condition: service_healthy

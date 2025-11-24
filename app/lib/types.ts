@@ -5,7 +5,7 @@ export interface Usuario {
   correo: string;
   rut: string;
   activo: boolean;
-  perfil: 'administrador' | 'vendedor';
+  perfil: 'administrador' | 'vendedor' | 'planificador';
   codigo_vendedor?: string;
   porcentaje_comision?: number;
   comision_base?: number;
@@ -108,7 +108,8 @@ export type DateRange = {
 }
 
 // Tipos para verificación de pagos
-export type PaymentMethod = 'efectivo' | 'transferencia' | 'webpay';
+export type PaymentMethod = 'efectivo' | 'transferencia' | 'webpay' | 'flete';
+export type PaymentStatus = 'PENDING' | 'APPROVED' | 'REJECTED';
 
 export interface PaymentVerification {
   id: string;
@@ -119,13 +120,22 @@ export interface PaymentVerification {
   comment: string;
   documentInfo: string; // JSON string con info del documento
   paymentMethod: PaymentMethod; // Método de pago utilizado
+  amount?: number; // Monto verificado
   userId: string;
+  status: PaymentStatus;
+  approvedAt?: Date;
+  approvedBy?: string;
+  rejectionReason?: string;
   createdAt: Date;
   updatedAt: Date;
   user?: {
     id: string;
     nombre: string;
     codigo_vendedor?: string;
+  };
+  approver?: {
+    id: string;
+    nombre: string;
   };
 }
 

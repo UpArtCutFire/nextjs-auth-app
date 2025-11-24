@@ -159,6 +159,8 @@ export function PaymentVerificationGrid({
         return <Building2 className="h-4 w-4" />;
       case 'webpay':
         return <CreditCard className="h-4 w-4" />;
+      case 'flete':
+        return <span className="text-base">🚚</span>;
       default:
         return <CreditCard className="h-4 w-4" />;
     }
@@ -173,6 +175,8 @@ export function PaymentVerificationGrid({
         return 'Transferencia';
       case 'webpay':
         return 'Webpay';
+      case 'flete':
+        return 'Monto Flete';
       default:
         return method;
     }
@@ -187,6 +191,8 @@ export function PaymentVerificationGrid({
         return 'secondary';
       case 'webpay':
         return 'outline';
+      case 'flete':
+        return 'destructive';
       default:
         return 'outline';
     }
@@ -261,11 +267,11 @@ export function PaymentVerificationGrid({
                     </div>
                   </TableCell>
                   <TableCell>
-                    {docInfo.MntTotal ? 
+                    {verification.amount ? 
                       new Intl.NumberFormat('es-CL', {
                         style: 'currency',
                         currency: 'CLP'
-                      }).format(typeof docInfo.MntTotal === 'string' ? parseFloat(docInfo.MntTotal) : docInfo.MntTotal)
+                      }).format(verification.amount)
                       : '-'
                     }
                   </TableCell>
@@ -336,11 +342,18 @@ export function PaymentVerificationGrid({
                         <div><strong>Tipo:</strong> {docInfo.TipoDoc || '-'}</div>
                         <div><strong>Cliente:</strong> {docInfo.NomCliente || '-'}</div>
                         <div><strong>Código Cliente:</strong> {docInfo.CodCli || '-'}</div>
-                        <div><strong>Monto Total:</strong> {docInfo.MntTotal ? 
+                        <div><strong>Monto Total Documento:</strong> {docInfo.MntTotal ? 
                           new Intl.NumberFormat('es-CL', {
                             style: 'currency',
                             currency: 'CLP'
                           }).format(typeof docInfo.MntTotal === 'string' ? parseFloat(docInfo.MntTotal) : docInfo.MntTotal)
+                          : '-'
+                        }</div>
+                        <div><strong>Monto Verificado:</strong> {selectedVerification.amount ? 
+                          new Intl.NumberFormat('es-CL', {
+                            style: 'currency',
+                            currency: 'CLP'
+                          }).format(selectedVerification.amount)
                           : '-'
                         }</div>
                         <div><strong>Estado:</strong> {docInfo.EstadoDoc || '-'}</div>

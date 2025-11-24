@@ -37,6 +37,7 @@ export const authOptions: NextAuthOptions = {
             return null;
           }
 
+
           return {
             id: user.id,
             email: user.correo,
@@ -57,6 +58,7 @@ export const authOptions: NextAuthOptions = {
   callbacks: {
     async jwt({ token, user }) {
       if (user) {
+        token.id = user.id;
         token.perfil = (user as any).perfil;
         token.codigo_vendedor = (user as any).codigo_vendedor;
       }
@@ -64,7 +66,7 @@ export const authOptions: NextAuthOptions = {
     },
     async session({ session, token }) {
       if (session.user) {
-        (session.user as any).id = token.sub;
+        (session.user as any).id = token.id || token.sub;
         (session.user as any).perfil = token.perfil;
         (session.user as any).codigo_vendedor = token.codigo_vendedor;
       }
@@ -74,4 +76,5 @@ export const authOptions: NextAuthOptions = {
   pages: {
     signIn: '/login',
   },
+  debug: false,
 };

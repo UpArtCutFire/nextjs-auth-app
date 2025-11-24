@@ -38,7 +38,8 @@ interface PaymentVerificationDetail {
   documentNumber: string;
   documentType: string;
   vendorCode: string;
-  paymentMethod: 'efectivo' | 'transferencia' | 'webpay';
+  paymentMethod: 'efectivo' | 'transferencia' | 'webpay' | 'flete';
+  amount?: number;
   comment: string;
   photoUrl?: string;
   createdAt: string;
@@ -69,6 +70,7 @@ const getPaymentMethodLabel = (method: string) => {
     case 'efectivo': return 'Efectivo';
     case 'transferencia': return 'Transferencia';
     case 'webpay': return 'WebPay';
+    case 'flete': return 'Monto Flete';
     default: return method;
   }
 };
@@ -78,6 +80,7 @@ const getPaymentMethodIcon = (method: string) => {
     case 'efectivo': return <DollarSign className="h-4 w-4" />;
     case 'transferencia': return <CreditCard className="h-4 w-4" />;
     case 'webpay': return <CreditCard className="h-4 w-4" />;
+    case 'flete': return <span className="text-base">🚚</span>;
     default: return <CreditCard className="h-4 w-4" />;
   }
 };
@@ -87,6 +90,7 @@ const getPaymentMethodColor = (method: string) => {
     case 'efectivo': return 'bg-green-100 text-green-800';
     case 'transferencia': return 'bg-blue-100 text-blue-800';
     case 'webpay': return 'bg-purple-100 text-purple-800';
+    case 'flete': return 'bg-orange-100 text-orange-800';
     default: return 'bg-gray-100 text-gray-800';
   }
 };
@@ -113,8 +117,9 @@ const formatDateTime = (dateString: string) => {
 export function PaymentDetailModal({ documentNumber, documentType, children }: PaymentDetailModalProps) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [paymentDetail, setPaymentDetail] = useState<PaymentVerificationDetail | null>(null);
+  const [paymentDetails, setPaymentDetails] = useState<PaymentVerificationDetail[]>([]);
   const [imageViewOpen, setImageViewOpen] = useState(false);
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
 
   const fetchPaymentDetail = async () => {
     try {
@@ -137,7 +142,8 @@ export function PaymentDetailModal({ documentNumber, documentType, children }: P
         throw new Error(data.error || 'Error en respuesta del servidor');
       }
 
-      setPaymentDetail(data.paymentVerification);
+      // La API ahora devuelve paymentVerifications (plural) con todos los pagos
+      setPaymentDetails(data.paymentVerifications || [data.paymentVerification]);
       
     } catch (error) {
       console.error('Error obteniendo detalles:', error);
@@ -149,11 +155,12 @@ export function PaymentDetailModal({ documentNumber, documentType, children }: P
 
   const handleOpenChange = (newOpen: boolean) => {
     setOpen(newOpen);
-    if (newOpen && !paymentDetail) {
+    if (newOpen && paymentDetails.length === 0) {
       fetchPaymentDetail();
     }
     if (!newOpen) {
-      setPaymentDetail(null);
+      setPaymentDetails([]);
+      setSelectedImage(null);
     }
   };
 
@@ -179,7 +186,7 @@ export function PaymentDetailModal({ documentNumber, documentType, children }: P
       <DialogTrigger asChild>
         {children}
       </DialogTrigger>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-2xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Eye className="h-5 w-5" />
@@ -195,7 +202,7 @@ export function PaymentDetailModal({ documentNumber, documentType, children }: P
             <Loader2 className="h-8 w-8 animate-spin" />
             <span className="ml-2">Cargando detalles...</span>
           </div>
-        ) : paymentDetail ? (
+        ) : paymentDetails.length > 0 ? (
           <div className="space-y-6">
             
             {/* Información del Documento */}
@@ -207,179 +214,208 @@ export function PaymentDetailModal({ documentNumber, documentType, children }: P
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <Label className="text-sm font-medium text-muted-foreground">Documento Origen</Label>
                     <div className="flex items-center gap-2 mt-1">
                       <Badge variant="outline">
-                        {getDocumentTypeLabel(paymentDetail.documentType)} {paymentDetail.documentNumber}
+                        {getDocumentTypeLabel(paymentDetails[0].documentType)} {paymentDetails[0].documentNumber}
                       </Badge>
                     </div>
                   </div>
-                  {paymentDetail.documentInfo?.targetType && (
+                  {paymentDetails[0].documentInfo?.targetType && (
                     <div>
                       <Label className="text-sm font-medium text-muted-foreground">Generará</Label>
                       <div className="flex items-center gap-2 mt-1">
                         <Badge variant="default" className="bg-blue-100 text-blue-800">
-                          {paymentDetail.documentInfo.targetType}
+                          {paymentDetails[0].documentInfo.targetType}
                         </Badge>
                       </div>
                     </div>
                   )}
-                  {paymentDetail.documentInfo?.cliente && (
+                  {paymentDetails[0].documentInfo?.cliente && (
                     <div>
                       <Label className="text-sm font-medium text-muted-foreground">Cliente</Label>
-                      <p className="text-sm font-medium mt-1">{paymentDetail.documentInfo.cliente}</p>
+                      <p className="text-sm font-medium mt-1">{paymentDetails[0].documentInfo.cliente}</p>
                     </div>
                   )}
-                  {paymentDetail.documentInfo?.monto && (
+                  {paymentDetails[0].documentInfo?.monto && (
                     <div>
                       <Label className="text-sm font-medium text-muted-foreground">Monto Total</Label>
                       <p className="text-sm font-semibold text-green-600 mt-1">
-                        {formatCurrency(paymentDetail.documentInfo.monto)}
+                        {formatCurrency(paymentDetails[0].documentInfo.monto)}
                       </p>
                     </div>
                   )}
-                  {paymentDetail.documentInfo?.fecha && (
+                  {paymentDetails[0].documentInfo?.fecha && (
                     <div>
                       <Label className="text-sm font-medium text-muted-foreground">Fecha Documento</Label>
                       <p className="text-sm mt-1">
-                        {new Date(paymentDetail.documentInfo.fecha).toLocaleDateString('es-CL')}
+                        {new Date(paymentDetails[0].documentInfo.fecha).toLocaleDateString('es-CL')}
                       </p>
                     </div>
                   )}
                   <div>
                     <Label className="text-sm font-medium text-muted-foreground">Código Vendedor</Label>
-                    <p className="text-sm mt-1">{paymentDetail.vendorCode}</p>
+                    <p className="text-sm mt-1">{paymentDetails[0].vendorCode}</p>
                   </div>
                 </div>
               </CardContent>
             </Card>
 
-            {/* Información del Pago */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-lg">
-                  <CreditCard className="h-5 w-5" />
-                  Información del Pago
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div>
-                  <Label className="text-sm font-medium text-muted-foreground">Método de Pago</Label>
-                  <div className="flex items-center gap-2 mt-1">
-                    <Badge className={getPaymentMethodColor(paymentDetail.paymentMethod)}>
-                      {getPaymentMethodIcon(paymentDetail.paymentMethod)}
-                      <span className="ml-1">{getPaymentMethodLabel(paymentDetail.paymentMethod)}</span>
-                    </Badge>
-                  </div>
-                </div>
-
-                {paymentDetail.comment && (
-                  <div>
-                    <Label className="text-sm font-medium text-muted-foreground flex items-center gap-1">
-                      <MessageSquare className="h-4 w-4" />
-                      Comentarios del Vendedor
-                    </Label>
-                    <div className="mt-1 p-3 bg-muted rounded-md">
-                      <p className="text-sm">{paymentDetail.comment}</p>
+            {/* Información de los Pagos */}
+            <div className="space-y-4">
+              <h3 className="font-semibold text-lg flex items-center gap-2">
+                <CreditCard className="h-5 w-5" />
+                Pagos Registrados ({paymentDetails.length})
+              </h3>
+              
+              {/* Resumen de totales por método de pago */}
+              {paymentDetails.length > 1 && (
+                <Card className="bg-muted/50">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-sm">Resumen de Pagos</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
+                      {Object.entries(
+                        paymentDetails.reduce((acc, payment) => {
+                          const method = payment.paymentMethod;
+                          acc[method] = (acc[method] || 0) + (payment.amount || 0);
+                          return acc;
+                        }, {} as Record<string, number>)
+                      ).map(([method, total]) => (
+                        <div key={method} className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <Badge className={getPaymentMethodColor(method) + ' text-xs'}>
+                              {getPaymentMethodIcon(method)}
+                              <span className="ml-1">{getPaymentMethodLabel(method)}</span>
+                            </Badge>
+                          </div>
+                          <span className="font-semibold">{formatCurrency(total)}</span>
+                        </div>
+                      ))}
                     </div>
-                  </div>
-                )}
+                    <Separator className="my-3" />
+                    <div className="flex items-center justify-between font-semibold">
+                      <span>Total Verificado:</span>
+                      <span className="text-green-600">
+                        {formatCurrency(paymentDetails.reduce((acc, p) => acc + (p.amount || 0), 0))}
+                      </span>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+              
+              {/* Lista de pagos individuales */}
+              {paymentDetails.map((payment, index) => (
+                <Card key={payment.id}>
+                  <CardHeader>
+                    <CardTitle className="text-base flex items-center justify-between">
+                      <span className="flex items-center gap-2">
+                        Pago #{index + 1}
+                        {payment.paymentMethod === 'flete' && (
+                          <Badge variant="outline" className="text-xs">
+                            ⚠️ Excluido de comisiones
+                          </Badge>
+                        )}
+                      </span>
+                      <Badge className={getPaymentMethodColor(payment.paymentMethod)}>
+                        {getPaymentMethodIcon(payment.paymentMethod)}
+                        <span className="ml-1">{getPaymentMethodLabel(payment.paymentMethod)}</span>
+                      </Badge>
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    {payment.amount && (
+                      <div>
+                        <Label className="text-sm font-medium text-muted-foreground flex items-center gap-1">
+                          <DollarSign className="h-4 w-4" />
+                          {payment.paymentMethod === 'flete' ? 'Monto del Flete' : 'Monto Verificado'}
+                        </Label>
+                        <p className="text-lg font-semibold text-green-600 mt-1">
+                          {formatCurrency(payment.amount)}
+                        </p>
+                      </div>
+                    )}
 
-                {paymentDetail.photoUrl && (
-                  <div>
-                    <Label className="text-sm font-medium text-muted-foreground flex items-center gap-1">
-                      <ImageIcon className="h-4 w-4" />
-                      Comprobante de Pago
-                    </Label>
-                    <div className="mt-2">
-                      <div 
-                        className="relative w-full h-48 bg-muted rounded-md overflow-hidden cursor-pointer hover:opacity-90 transition-opacity"
-                        onClick={() => setImageViewOpen(true)}
-                      >
-                        <Image
-                          src={paymentDetail.photoUrl}
-                          alt="Comprobante de pago"
-                          fill
-                          className="object-cover"
-                        />
-                        <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-0 hover:bg-opacity-10 transition-all">
-                          <div className="bg-white bg-opacity-90 p-2 rounded-full opacity-0 hover:opacity-100 transition-opacity">
-                            <Eye className="h-5 w-5" />
+                    {payment.comment && (
+                      <div>
+                        <Label className="text-sm font-medium text-muted-foreground flex items-center gap-1">
+                          <MessageSquare className="h-4 w-4" />
+                          Comentarios
+                        </Label>
+                        <div className="mt-1 p-3 bg-muted rounded-md">
+                          <p className="text-sm">{payment.comment}</p>
+                        </div>
+                      </div>
+                    )}
+
+                    {payment.photoUrl && (
+                      <div>
+                        <Label className="text-sm font-medium text-muted-foreground flex items-center gap-1">
+                          <ImageIcon className="h-4 w-4" />
+                          Comprobante de Pago
+                        </Label>
+                        <div className="mt-2">
+                          <div 
+                            className="relative w-full h-48 bg-muted rounded-md overflow-hidden cursor-pointer hover:opacity-90 transition-opacity"
+                            onClick={() => {
+                              setSelectedImage(payment.photoUrl!);
+                              setImageViewOpen(true);
+                            }}
+                          >
+                            <Image
+                              src={payment.photoUrl}
+                              alt="Comprobante de pago"
+                              fill
+                              className="object-cover"
+                            />
+                            <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-0 hover:bg-opacity-10 transition-all">
+                              <div className="bg-white bg-opacity-90 p-2 rounded-full opacity-0 hover:opacity-100 transition-opacity">
+                                <Eye className="h-5 w-5" />
+                              </div>
+                            </div>
+                          </div>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="mt-2"
+                            onClick={() => {
+                              setSelectedImage(payment.photoUrl!);
+                              setImageViewOpen(true);
+                            }}
+                          >
+                            <Eye className="h-4 w-4 mr-2" />
+                            Ver en tamaño completo
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Información del registro */}
+                    <div className="border-t pt-3">
+                      <div className="flex items-center justify-between text-sm">
+                        <div className="flex items-center gap-2">
+                          <Avatar className="h-8 w-8">
+                            <AvatarFallback className="text-xs">
+                              {getInitials(payment.registeredBy.nombre)}
+                            </AvatarFallback>
+                          </Avatar>
+                          <div>
+                            <p className="font-medium">{payment.registeredBy.nombre}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {formatDateTime(payment.createdAt)}
+                            </p>
                           </div>
                         </div>
                       </div>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="mt-2"
-                        onClick={() => setImageViewOpen(true)}
-                      >
-                        <Eye className="h-4 w-4 mr-2" />
-                        Ver en tamaño completo
-                      </Button>
                     </div>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
 
-            {/* Información del Registro */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-lg">
-                  <User className="h-5 w-5" />
-                  Información del Registro
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="flex items-center gap-3">
-                  <Avatar className="h-10 w-10">
-                    <AvatarFallback>
-                      {getInitials(paymentDetail.registeredBy.nombre)}
-                    </AvatarFallback>
-                  </Avatar>
-                  <div>
-                    <p className="font-medium">{paymentDetail.registeredBy.nombre}</p>
-                    <p className="text-sm text-muted-foreground">{paymentDetail.registeredBy.correo}</p>
-                    {paymentDetail.registeredBy.codigoVendedor && (
-                      <p className="text-xs text-muted-foreground">
-                        Código: {paymentDetail.registeredBy.codigoVendedor}
-                      </p>
-                    )}
-                  </div>
-                </div>
-
-                <Separator />
-
-                <div className="grid grid-cols-2 gap-4 text-sm">
-                  <div>
-                    <Label className="text-muted-foreground flex items-center gap-1">
-                      <Calendar className="h-4 w-4" />
-                      Fecha de Registro
-                    </Label>
-                    <p className="font-medium mt-1">{formatDateTime(paymentDetail.createdAt)}</p>
-                  </div>
-                  {paymentDetail.updatedAt !== paymentDetail.createdAt && (
-                    <div>
-                      <Label className="text-muted-foreground flex items-center gap-1">
-                        <Clock className="h-4 w-4" />
-                        Última Actualización
-                      </Label>
-                      <p className="font-medium mt-1">{formatDateTime(paymentDetail.updatedAt)}</p>
-                    </div>
-                  )}
-                </div>
-
-                <div className="flex items-center gap-2 pt-2">
-                  <CheckCircle className="h-5 w-5 text-green-600" />
-                  <span className="text-sm font-medium text-green-600">
-                    Pago verificado y listo para facturación
-                  </span>
-                </div>
-              </CardContent>
-            </Card>
 
           </div>
         ) : (
@@ -390,18 +426,18 @@ export function PaymentDetailModal({ documentNumber, documentType, children }: P
         )}
 
         {/* Modal para ver imagen en tamaño completo */}
-        {paymentDetail?.photoUrl && (
+        {selectedImage && (
           <Dialog open={imageViewOpen} onOpenChange={setImageViewOpen}>
             <DialogContent className="max-w-4xl">
               <DialogHeader>
                 <DialogTitle>Comprobante de Pago</DialogTitle>
                 <DialogDescription>
-                  {getDocumentTypeLabel(paymentDetail.documentType)} {paymentDetail.documentNumber}
+                  {getDocumentTypeLabel(paymentDetails[0]?.documentType)} {paymentDetails[0]?.documentNumber}
                 </DialogDescription>
               </DialogHeader>
               <div className="relative w-full h-[60vh]">
                 <Image
-                  src={paymentDetail.photoUrl}
+                  src={selectedImage}
                   alt="Comprobante de pago"
                   fill
                   className="object-contain"
