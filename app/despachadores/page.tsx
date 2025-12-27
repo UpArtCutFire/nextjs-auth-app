@@ -6,19 +6,20 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useSession } from 'next-auth/react';
-import { 
-  Truck, 
-  MapPin, 
-  Phone, 
-  FileText, 
-  Package, 
-  Play, 
-  CheckCircle, 
+import {
+  Truck,
+  MapPin,
+  Phone,
+  FileText,
+  Package,
+  Play,
+  CheckCircle,
   Camera,
   Upload,
   RefreshCw,
   Clock,
-  User
+  User,
+  Store
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -35,6 +36,7 @@ interface Dispatch {
   telefono?: string;
   correo?: string;
   tamanoDespacho: 'S' | 'M' | 'L' | 'XL' | 'XXL';
+  tipoDespacho: 'RETIRO_LOCAL' | 'COURIER' | 'DESPACHO';
   clienteNombre: string;
   status: 'PENDING' | 'SCHEDULED' | 'IN_TRANSIT' | 'DELIVERED' | 'CANCELLED';
   scheduledDate?: string;
@@ -54,6 +56,11 @@ interface Dispatch {
     patente: string;
     nombre: string;
     talla: string;
+  };
+  branch?: {
+    id: string;
+    nombre: string;
+    direccion: string;
   };
   deliveryPhotos: Array<{
     id: string;
@@ -159,6 +166,41 @@ export default function DespachadorPage() {
     setPhotoComment('');
   };
 
+  // Función para confirmar retiro rápido sin abrir modal de fotos
+  const handleQuickRetiroConfirm = async (dispatch: Dispatch) => {
+    if (!confirm(`¿Confirmar que el cliente retiró el pedido ${dispatch.documentType} ${dispatch.documentNumber}?`)) {
+      return;
+    }
+
+    try {
+      setActionLoading(dispatch.id);
+      const formData = new FormData();
+      formData.append('dispatchId', dispatch.id);
+      formData.append('driverId', session?.user?.id || '');
+      formData.append('comment', 'Retiro confirmado en sucursal');
+
+      const response = await fetch('/api/dispatches/complete', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (response.ok) {
+        toast.success('Retiro confirmado correctamente');
+        fetchDispatches();
+      } else {
+        const errorData = await response.json().catch(() => ({}));
+        const errorMsg = errorData.error || errorData.message || `Error del servidor (${response.status})`;
+        console.error('Error response:', response.status, errorData);
+        toast.error(errorMsg);
+      }
+    } catch (error) {
+      console.error('Error en fetch:', error);
+      toast.error('Error de conexión. Verifica tu internet e intenta de nuevo.');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
   // Manejar selección de fotos con validación
   const handlePhotoSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -206,7 +248,10 @@ export default function DespachadorPage() {
   };
 
   const handlePhotoUpload = async () => {
-    if (!selectedDispatch || photos.length === 0) {
+    const isRetiroLocal = selectedDispatch?.tipoDespacho === 'RETIRO_LOCAL';
+
+    // Para RETIRO_LOCAL las fotos son opcionales
+    if (!selectedDispatch || (photos.length === 0 && !isRetiroLocal)) {
       toast.error('Debe seleccionar al menos una foto');
       return;
     }
@@ -416,53 +461,112 @@ export default function DespachadorPage() {
             </CardHeader>
             <CardContent className="space-y-4">
               {inTransitDispatches.map((dispatch) => (
-                <div key={dispatch.id} className="border rounded-lg p-4 bg-orange-50">
+                <div
+                  key={dispatch.id}
+                  className={`border rounded-lg p-4 ${
+                    dispatch.tipoDespacho === 'RETIRO_LOCAL'
+                      ? 'bg-purple-50 border-purple-200'
+                      : 'bg-orange-50'
+                  }`}
+                >
+                  {/* Indicador de Retiro Local */}
+                  {dispatch.tipoDespacho === 'RETIRO_LOCAL' && (
+                    <div className="flex items-center gap-2 mb-2 bg-purple-100 rounded-md px-2 py-1">
+                      <Store className="h-4 w-4 text-purple-600" />
+                      <span className="text-xs font-semibold text-purple-700">
+                        🏪 Retiro en Sucursal: {dispatch.branch?.nombre || 'Por confirmar'}
+                      </span>
+                    </div>
+                  )}
+
                   <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center gap-2">
-                      <FileText className="h-4 w-4 text-orange-600" />
+                      <FileText className={`h-4 w-4 ${
+                        dispatch.tipoDespacho === 'RETIRO_LOCAL' ? 'text-purple-600' : 'text-orange-600'
+                      }`} />
                       <span className="font-semibold text-sm">
                         {dispatch.documentType} {dispatch.documentNumber}
                       </span>
                     </div>
                     <div className="flex items-center gap-2">
                       {getSizeBadge(dispatch.tamanoDespacho)}
-                      {getStatusBadge(dispatch.status)}
+                      {dispatch.tipoDespacho === 'RETIRO_LOCAL' ? (
+                        <Badge className="bg-purple-500">Retiro</Badge>
+                      ) : (
+                        getStatusBadge(dispatch.status)
+                      )}
                     </div>
                   </div>
 
                   <div className="text-xs text-gray-600 space-y-1 mb-3">
-                    <div className="flex items-center gap-1">
-                      <MapPin className="h-3 w-3" />
-                      <span className="font-medium">{dispatch.direccion}</span>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <Package className="h-3 w-3" />
-                      {dispatch.comuna}, {dispatch.region}
-                    </div>
-                    {dispatch.telefono && (
-                      <div className="flex items-center gap-1">
-                        <Phone className="h-3 w-3" />
-                        <span className="font-medium">{dispatch.telefono}</span>
-                      </div>
+                    {dispatch.tipoDespacho === 'RETIRO_LOCAL' ? (
+                      <>
+                        <div className="flex items-center gap-1">
+                          <User className="h-3 w-3" />
+                          <span className="font-medium">{dispatch.clienteNombre}</span>
+                        </div>
+                        {dispatch.telefono && (
+                          <div className="flex items-center gap-1">
+                            <Phone className="h-3 w-3" />
+                            <span className="font-medium">{dispatch.telefono}</span>
+                          </div>
+                        )}
+                        <div className="text-purple-600 italic mt-1">
+                          Esperando que el cliente retire en sucursal
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="flex items-center gap-1">
+                          <MapPin className="h-3 w-3" />
+                          <span className="font-medium">{dispatch.direccion}</span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <Package className="h-3 w-3" />
+                          {dispatch.comuna}, {dispatch.region}
+                        </div>
+                        {dispatch.telefono && (
+                          <div className="flex items-center gap-1">
+                            <Phone className="h-3 w-3" />
+                            <span className="font-medium">{dispatch.telefono}</span>
+                          </div>
+                        )}
+                      </>
                     )}
                     {dispatch.startedAt && (
                       <div className="flex items-center gap-1">
                         <Clock className="h-3 w-3" />
-                        Iniciado: {new Date(dispatch.startedAt).toLocaleString('es-CL')}
+                        {dispatch.tipoDespacho === 'RETIRO_LOCAL' ? 'Creado' : 'Iniciado'}: {new Date(dispatch.startedAt).toLocaleString('es-CL')}
                       </div>
                     )}
                   </div>
 
-                  <Button
-                    onClick={() => openPhotoModal(dispatch)}
-                    disabled={actionLoading === dispatch.id}
-                    className="w-full"
-                    size="sm"
-                    variant="outline"
-                  >
-                    <Camera className="h-4 w-4 mr-2" />
-                    Completar Entrega
-                  </Button>
+                  {dispatch.tipoDespacho === 'RETIRO_LOCAL' ? (
+                    <Button
+                      onClick={() => handleQuickRetiroConfirm(dispatch)}
+                      disabled={actionLoading === dispatch.id}
+                      className="w-full bg-purple-600 hover:bg-purple-700"
+                      size="sm"
+                    >
+                      {actionLoading === dispatch.id ? (
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                      ) : (
+                        <CheckCircle className="h-4 w-4 mr-2" />
+                      )}
+                      Confirmar Retiro
+                    </Button>
+                  ) : (
+                    <Button
+                      onClick={() => openPhotoModal(dispatch)}
+                      disabled={actionLoading === dispatch.id}
+                      className="w-full"
+                      size="sm"
+                      variant="outline"
+                    >
+                      <Camera className="h-4 w-4 mr-2" />
+                      Completar Entrega
+                    </Button>
+                  )}
                 </div>
               ))}
 
@@ -528,23 +632,47 @@ export default function DespachadorPage() {
       <Dialog open={photoModalOpen} onOpenChange={setPhotoModalOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Completar Entrega</DialogTitle>
+            <DialogTitle>
+              {selectedDispatch?.tipoDespacho === 'RETIRO_LOCAL'
+                ? '🏪 Confirmar Retiro en Sucursal'
+                : 'Completar Entrega'
+              }
+            </DialogTitle>
           </DialogHeader>
-          
+
           {selectedDispatch && (
             <div className="space-y-4">
-              <div className="bg-gray-50 rounded-lg p-3">
+              <div className={`rounded-lg p-3 ${
+                selectedDispatch.tipoDespacho === 'RETIRO_LOCAL'
+                  ? 'bg-purple-50 border border-purple-200'
+                  : 'bg-gray-50'
+              }`}>
                 <div className="font-semibold">
                   {selectedDispatch.documentType} {selectedDispatch.documentNumber}
                 </div>
-                <div className="text-sm text-gray-600">
-                  {selectedDispatch.direccion}, {selectedDispatch.comuna}
-                </div>
+                {selectedDispatch.tipoDespacho === 'RETIRO_LOCAL' ? (
+                  <>
+                    <div className="text-sm text-gray-600">
+                      Cliente: {selectedDispatch.clienteNombre}
+                    </div>
+                    <div className="text-sm text-purple-600 font-medium mt-1">
+                      Sucursal: {selectedDispatch.branch?.nombre || 'Por confirmar'}
+                    </div>
+                  </>
+                ) : (
+                  <div className="text-sm text-gray-600">
+                    {selectedDispatch.direccion}, {selectedDispatch.comuna}
+                  </div>
+                )}
               </div>
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Fotos de Evidencia * {photos.length > 0 && `(${photos.length} seleccionada${photos.length > 1 ? 's' : ''})`}
+                  {selectedDispatch.tipoDespacho === 'RETIRO_LOCAL' ? (
+                    <>Fotos de Evidencia (Opcional) {photos.length > 0 && `(${photos.length} seleccionada${photos.length > 1 ? 's' : ''})`}</>
+                  ) : (
+                    <>Fotos de Evidencia * {photos.length > 0 && `(${photos.length} seleccionada${photos.length > 1 ? 's' : ''})`}</>
+                  )}
                 </label>
                 <Input
                   type="file"
@@ -555,7 +683,10 @@ export default function DespachadorPage() {
                   className="mb-2"
                 />
                 <p className="text-xs text-gray-500">
-                  Toma fotos con la cámara o selecciona de la galería (máx. 5MB por foto)
+                  {selectedDispatch.tipoDespacho === 'RETIRO_LOCAL'
+                    ? 'Puedes tomar una foto del cliente retirando (opcional)'
+                    : 'Toma fotos con la cámara o selecciona de la galería (máx. 5MB por foto)'
+                  }
                 </p>
 
                 {/* Preview de fotos seleccionadas */}
@@ -588,7 +719,10 @@ export default function DespachadorPage() {
                 <Textarea
                   value={photoComment}
                   onChange={(e) => setPhotoComment(e.target.value)}
-                  placeholder="Observaciones sobre la entrega..."
+                  placeholder={selectedDispatch.tipoDespacho === 'RETIRO_LOCAL'
+                    ? 'Ej: Cliente retiró personalmente, mostró cédula...'
+                    : 'Observaciones sobre la entrega...'
+                  }
                   rows={3}
                 />
               </div>
@@ -603,15 +737,27 @@ export default function DespachadorPage() {
                 </Button>
                 <Button
                   onClick={handlePhotoUpload}
-                  disabled={photos.length === 0 || actionLoading === selectedDispatch.id}
-                  className="flex-1"
+                  disabled={
+                    (photos.length === 0 && selectedDispatch.tipoDespacho !== 'RETIRO_LOCAL') ||
+                    actionLoading === selectedDispatch.id
+                  }
+                  className={`flex-1 ${
+                    selectedDispatch.tipoDespacho === 'RETIRO_LOCAL'
+                      ? 'bg-purple-600 hover:bg-purple-700'
+                      : ''
+                  }`}
                 >
                   {actionLoading === selectedDispatch.id ? (
                     <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                  ) : selectedDispatch.tipoDespacho === 'RETIRO_LOCAL' ? (
+                    <CheckCircle className="h-4 w-4 mr-2" />
                   ) : (
                     <Upload className="h-4 w-4 mr-2" />
                   )}
-                  Completar Entrega
+                  {selectedDispatch.tipoDespacho === 'RETIRO_LOCAL'
+                    ? 'Confirmar Retiro'
+                    : 'Completar Entrega'
+                  }
                 </Button>
               </div>
             </div>

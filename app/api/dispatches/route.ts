@@ -123,35 +123,51 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Preparar fecha sugerida si existe
+    const parsedSuggestedDate = suggestedDeliveryDate ? (() => {
+      if (suggestedDeliveryDate.includes('T')) {
+        return new Date(suggestedDeliveryDate);
+      } else {
+        const [year, month, day] = suggestedDeliveryDate.split('-').map(Number);
+        return new Date(year, month - 1, day, 12, 0, 0);
+      }
+    })() : null;
+
+    // Datos comunes para todos los tipos de despacho
+    const commonData = {
+      documentNumber,
+      documentType,
+      vendorCode,
+      direccion,
+      comuna,
+      region,
+      telefono,
+      correo,
+      tamanoDespacho,
+      tipoDespacho,
+      branchId: branchId || null,
+      clienteNombre,
+      userId: session.user.id,
+      documentInfo: documentInfo || null,
+      ...(parsedSuggestedDate && { suggestedDeliveryDate: parsedSuggestedDate })
+    };
+
+    // Para RETIRO_LOCAL: crear directamente en estado IN_TRANSIT (sin transporte)
+    // ya que los retiros no se planifican, solo se entregan cuando el cliente va a la sucursal
     const dispatch = await prisma.dispatch.create({
-      data: {
-        documentNumber,
-        documentType,
-        vendorCode,
-        direccion,
-        comuna,
-        region,
-        telefono,
-        correo,
-        tamanoDespacho,
-        tipoDespacho,
-        branchId: branchId || null,
-        clienteNombre,
-        userId: session.user.id,
-        documentInfo: documentInfo || null,
-        ...(suggestedDeliveryDate && { 
-          suggestedDeliveryDate: (() => {
-            // Handle date properly to avoid timezone issues
-            if (suggestedDeliveryDate.includes('T')) {
-              return new Date(suggestedDeliveryDate);
-            } else {
-              // Parse YYYY-MM-DD format using local time
-              const [year, month, day] = suggestedDeliveryDate.split('-').map(Number);
-              return new Date(year, month - 1, day, 12, 0, 0); // Set to noon to avoid date shifts
-            }
-          })()
-        })
-      },
+      data: tipoDespacho === 'RETIRO_LOCAL'
+        ? {
+            ...commonData,
+            status: 'IN_TRANSIT',     // Directo a tránsito
+            startedAt: new Date(),     // Marca inicio automático
+            transportId: null,         // Sin transporte
+            scheduledDate: null,       // Sin fecha programada
+            scheduledPeriod: null,     // Sin turno
+          }
+        : {
+            ...commonData,
+            status: 'PENDING',         // Estado normal para COURIER y DESPACHO
+          },
       include: {
         user: {
           select: {

@@ -17,7 +17,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Calendar, Clock, Truck, RotateCcw, PlayCircle, CheckCircle2, XCircle, Camera, Eye, X } from 'lucide-react';
+import { Calendar, Clock, Truck, RotateCcw, PlayCircle, CheckCircle2, XCircle, Camera, Eye, X, Store, CalendarClock } from 'lucide-react';
 import { toast } from 'sonner';
 import { PlanningModal } from '@/components/ui/planning-modal';
 
@@ -32,10 +32,12 @@ interface Dispatch {
   telefono?: string;
   correo?: string;
   tamanoDespacho: 'S' | 'M' | 'L' | 'XL' | 'XXL';
+  tipoDespacho: 'RETIRO_LOCAL' | 'COURIER' | 'DESPACHO';
   clienteNombre: string;
   status: 'PENDING' | 'SCHEDULED' | 'IN_TRANSIT' | 'DELIVERED' | 'CANCELLED';
   scheduledDate?: string;
   scheduledPeriod?: string;
+  suggestedDeliveryDate?: string;
   startedAt?: string;
   completedAt?: string;
   driverId?: string;
@@ -245,8 +247,232 @@ export default function PlanDespachos() {
   const filteredDispatches = dispatches.filter(dispatch => dispatch.status === activeTab);
   
   const getTabCount = (status: string) => {
+    // Para PENDING, excluir RETIRO_LOCAL ya que van directo a IN_TRANSIT
+    if (status === 'PENDING') {
+      return dispatches.filter(dispatch =>
+        dispatch.status === status && dispatch.tipoDespacho !== 'RETIRO_LOCAL'
+      ).length;
+    }
     return dispatches.filter(dispatch => dispatch.status === status).length;
   };
+
+  // Función para ordenar despachos PENDING por fecha sugerida (más cercanas primero)
+  const getSortedPendingDispatches = (dispatchList: Dispatch[]) => {
+    return [...dispatchList]
+      .filter(d => d.tipoDespacho !== 'RETIRO_LOCAL') // Excluir retiros locales
+      .sort((a, b) => {
+        // Si ambos tienen fecha sugerida, ordenar por fecha más cercana
+        if (a.suggestedDeliveryDate && b.suggestedDeliveryDate) {
+          return new Date(a.suggestedDeliveryDate).getTime() - new Date(b.suggestedDeliveryDate).getTime();
+        }
+        // Los que tienen fecha sugerida van primero
+        if (a.suggestedDeliveryDate && !b.suggestedDeliveryDate) return -1;
+        if (!a.suggestedDeliveryDate && b.suggestedDeliveryDate) return 1;
+        // Si ninguno tiene fecha, ordenar por fecha de creación
+        return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+      });
+  };
+
+  // Tabla específica para PENDING con columna de fecha solicitada
+  const renderPendingTable = (statusDispatches: Dispatch[]) => {
+    const sortedDispatches = getSortedPendingDispatches(statusDispatches);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
+    const isUrgentDate = (dateStr?: string) => {
+      if (!dateStr) return false;
+      const date = new Date(dateStr);
+      date.setHours(0, 0, 0, 0);
+      return date <= tomorrow;
+    };
+
+    return (
+      <div className="rounded-md border">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Documento</TableHead>
+              <TableHead>Cliente</TableHead>
+              <TableHead>Dirección</TableHead>
+              <TableHead>Comuna</TableHead>
+              <TableHead>Tamaño</TableHead>
+              <TableHead>
+                <div className="flex items-center gap-1">
+                  <CalendarClock className="h-4 w-4 text-yellow-600" />
+                  Fecha Solicitada
+                </div>
+              </TableHead>
+              <TableHead>Vendedor</TableHead>
+              <TableHead className="text-right">Acciones</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {sortedDispatches.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+                  No hay despachos pendientes de planificar
+                </TableCell>
+              </TableRow>
+            ) : (
+              sortedDispatches.map((dispatch) => (
+                <TableRow
+                  key={dispatch.id}
+                  className={isUrgentDate(dispatch.suggestedDeliveryDate) ? 'bg-yellow-50' : ''}
+                >
+                  <TableCell className="font-medium">
+                    {dispatch.documentType} {dispatch.documentNumber}
+                  </TableCell>
+                  <TableCell>{dispatch.clienteNombre}</TableCell>
+                  <TableCell>{dispatch.direccion || 'N/A'}</TableCell>
+                  <TableCell>{dispatch.comuna || 'N/A'}</TableCell>
+                  <TableCell>{getSizeBadge(dispatch.tamanoDespacho)}</TableCell>
+                  <TableCell>
+                    {dispatch.suggestedDeliveryDate ? (
+                      <div className="flex items-center gap-1">
+                        {isUrgentDate(dispatch.suggestedDeliveryDate) && (
+                          <span className="text-orange-500" title="Fecha urgente">⚠️</span>
+                        )}
+                        <Badge
+                          variant="outline"
+                          className={isUrgentDate(dispatch.suggestedDeliveryDate)
+                            ? 'bg-orange-100 text-orange-800 border-orange-300'
+                            : 'bg-yellow-50 text-yellow-800 border-yellow-300'
+                          }
+                        >
+                          📅 {formatDate(dispatch.suggestedDeliveryDate)}
+                        </Badge>
+                      </div>
+                    ) : (
+                      <span className="text-gray-400 text-sm">Sin fecha</span>
+                    )}
+                  </TableCell>
+                  <TableCell>{dispatch.user.nombre}</TableCell>
+                  <TableCell className="text-right">
+                    <Button
+                      variant="default"
+                      size="sm"
+                      onClick={() => handlePlanDispatch(dispatch)}
+                    >
+                      <Calendar className="h-4 w-4 mr-1" />
+                      Planificar
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))
+            )}
+          </TableBody>
+        </Table>
+      </div>
+    );
+  };
+
+  // Tabla específica para IN_TRANSIT con indicador de retiro local
+  const renderInTransitTable = (statusDispatches: Dispatch[]) => (
+    <div className="rounded-md border">
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Documento</TableHead>
+            <TableHead>Cliente</TableHead>
+            <TableHead>Tipo</TableHead>
+            <TableHead>Dirección</TableHead>
+            <TableHead>Comuna</TableHead>
+            <TableHead>Tamaño</TableHead>
+            <TableHead>Estado</TableHead>
+            <TableHead>Transporte</TableHead>
+            <TableHead>Vendedor</TableHead>
+            <TableHead className="text-right">Acciones</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {statusDispatches.length === 0 ? (
+            <TableRow>
+              <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">
+                No hay despachos en tránsito
+              </TableCell>
+            </TableRow>
+          ) : (
+            statusDispatches.map((dispatch) => (
+              <TableRow
+                key={dispatch.id}
+                className={dispatch.tipoDespacho === 'RETIRO_LOCAL' ? 'bg-purple-50' : ''}
+              >
+                <TableCell className="font-medium">
+                  {dispatch.documentType} {dispatch.documentNumber}
+                </TableCell>
+                <TableCell>{dispatch.clienteNombre}</TableCell>
+                <TableCell>
+                  {dispatch.tipoDespacho === 'RETIRO_LOCAL' ? (
+                    <Badge className="bg-purple-500 text-white flex items-center gap-1 w-fit">
+                      <Store className="h-3 w-3" />
+                      Retiro Local
+                    </Badge>
+                  ) : dispatch.tipoDespacho === 'COURIER' ? (
+                    <Badge variant="outline" className="bg-blue-50 text-blue-700">
+                      Courier
+                    </Badge>
+                  ) : (
+                    <Badge variant="outline" className="bg-green-50 text-green-700">
+                      Despacho
+                    </Badge>
+                  )}
+                </TableCell>
+                <TableCell>
+                  {dispatch.tipoDespacho === 'RETIRO_LOCAL'
+                    ? <span className="text-gray-400 italic">N/A (Retiro)</span>
+                    : dispatch.direccion || 'N/A'
+                  }
+                </TableCell>
+                <TableCell>{dispatch.comuna || 'N/A'}</TableCell>
+                <TableCell>{getSizeBadge(dispatch.tamanoDespacho)}</TableCell>
+                <TableCell>{getStatusBadge(dispatch.status)}</TableCell>
+                <TableCell>
+                  {dispatch.tipoDespacho === 'RETIRO_LOCAL' ? (
+                    <span className="text-gray-400 text-sm italic">Sin transporte</span>
+                  ) : dispatch.transport ? (
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium">{dispatch.transport.patente}</span>
+                      <Badge className={
+                        dispatch.transport.talla === 'S' ? 'bg-blue-500' :
+                        dispatch.transport.talla === 'M' ? 'bg-green-500' :
+                        dispatch.transport.talla === 'L' ? 'bg-yellow-500' :
+                        'bg-red-500'
+                      }>
+                        {dispatch.transport.talla}
+                      </Badge>
+                    </div>
+                  ) : (
+                    <span className="text-gray-400 text-sm">Sin asignar</span>
+                  )}
+                </TableCell>
+                <TableCell>{dispatch.user.nombre}</TableCell>
+                <TableCell className="text-right">
+                  <div className="flex gap-2 justify-end">
+                    <div className="text-xs text-gray-500 italic text-center py-2">
+                      {dispatch.tipoDespacho === 'RETIRO_LOCAL'
+                        ? 'Esperando retiro del cliente'
+                        : 'Solo el despachador puede completar'
+                      }
+                    </div>
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      onClick={() => handleUpdateStatus(dispatch, 'CANCELLED')}
+                    >
+                      <XCircle className="h-4 w-4 mr-1" />
+                      Cancelar
+                    </Button>
+                  </div>
+                </TableCell>
+              </TableRow>
+            ))
+          )}
+        </TableBody>
+      </Table>
+    </div>
+  );
 
   const renderDispatchTable = (statusDispatches: Dispatch[]) => (
     <div className="rounded-md border">
@@ -439,15 +665,15 @@ export default function PlanDespachos() {
               </TabsList>
               
               <TabsContent value="PENDING" className="mt-6">
-                {renderDispatchTable(filteredDispatches)}
+                {renderPendingTable(filteredDispatches)}
               </TabsContent>
-              
+
               <TabsContent value="SCHEDULED" className="mt-6">
                 {renderDispatchTable(filteredDispatches)}
               </TabsContent>
-              
+
               <TabsContent value="IN_TRANSIT" className="mt-6">
-                {renderDispatchTable(filteredDispatches)}
+                {renderInTransitTable(filteredDispatches)}
               </TabsContent>
               
               <TabsContent value="DELIVERED" className="mt-6">

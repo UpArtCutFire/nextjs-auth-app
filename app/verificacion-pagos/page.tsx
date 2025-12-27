@@ -100,6 +100,10 @@ export default function VerificacionPagosPage() {
   const [filteredDocuments, setFilteredDocuments] = useState<PaymentVerificationDocument[]>([]);
   const [statusFilter, setStatusFilter] = useState<string>('all');
 
+  // Estado para el filtro de mes/año de los indicadores
+  const [selectedMonth, setSelectedMonth] = useState<number>(new Date().getMonth());
+  const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
+
   // Estados para filtros dinámicos
   const [dynamicFilters, setDynamicFilters] = useState<DynamicFilters>({
     FchDoc: '',
@@ -127,13 +131,34 @@ export default function VerificacionPagosPage() {
     const now = new Date();
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
     const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-    
+
     const formatDate = (date: Date) => {
       return date.toISOString().split('T')[0]; // YYYY-MM-DD
     };
-    
+
     return `${formatDate(startOfMonth)} a ${formatDate(endOfMonth)}`;
   };
+
+  // Generar rango de fechas para un mes/año específico
+  const getMonthYearRange = (month: number, year: number) => {
+    const startOfMonth = new Date(year, month, 1);
+    const endOfMonth = new Date(year, month + 1, 0);
+
+    const formatDate = (date: Date) => {
+      return date.toISOString().split('T')[0]; // YYYY-MM-DD
+    };
+
+    return `${formatDate(startOfMonth)} a ${formatDate(endOfMonth)}`;
+  };
+
+  // Nombres de meses
+  const monthNames = [
+    'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+    'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
+  ];
+
+  // Generar array de años (últimos 3 años)
+  const availableYears = Array.from({ length: 3 }, (_, i) => new Date().getFullYear() - i);
 
   // Estado para las credenciales ERP
   const [erpCredentials, setErpCredentials] = useState<{
@@ -190,15 +215,33 @@ export default function VerificacionPagosPage() {
       // Si es vendedor o planificador, filtrar solo sus documentos
       const user = session?.user as any;
       if ((user?.perfil === 'vendedor' || user?.perfil === 'planificador') && user?.codigoVendedor) {
-        filtered = filtered.filter(doc => 
-          doc.CodVend === user.codigoVendedor || 
+        filtered = filtered.filter(doc =>
+          doc.CodVend === user.codigoVendedor ||
           doc.Vendedor === user.codigoVendedor
         );
       }
 
+      // Ordenar por prioridad: pendientes primero, luego por fecha
+      filtered = [...filtered].sort((a, b) => {
+        // Primero: pendientes antes que verificados
+        if (!a.hasPaymentVerification && b.hasPaymentVerification) return -1;
+        if (a.hasPaymentVerification && !b.hasPaymentVerification) return 1;
+        // Segundo: ordenar por fecha más reciente
+        return new Date(b.FchDoc).getTime() - new Date(a.FchDoc).getTime();
+      });
+
       setFilteredDocuments(filtered);
     }
   }, [paymentData?.documents, statusFilter, session]);
+
+  // Efecto para actualizar el filtro de fecha cuando cambie el mes/año seleccionado
+  useEffect(() => {
+    const newDateRange = getMonthYearRange(selectedMonth, selectedYear);
+    setDynamicFilters(prev => ({
+      ...prev,
+      FchDoc: newDateRange
+    }));
+  }, [selectedMonth, selectedYear]);
 
   // Efecto para recargar datos cuando cambien los filtros dinámicos (con debounce)
   useEffect(() => {
@@ -632,6 +675,59 @@ export default function VerificacionPagosPage() {
                     Reconectar ERP
                   </Button>
                 )}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Selector de Mes/Año para Indicadores - Siempre visible */}
+        <Card className="bg-gradient-to-r from-yellow-50 to-orange-50 border-yellow-200">
+          <CardContent className="py-4">
+            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+              <div className="flex items-center gap-2">
+                <Calendar className="h-5 w-5 text-yellow-600" />
+                <span className="font-semibold text-yellow-800">Período de Consulta:</span>
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2">
+                  <Label htmlFor="month-select" className="text-sm text-yellow-700">Mes:</Label>
+                  <Select
+                    value={selectedMonth.toString()}
+                    onValueChange={(value) => setSelectedMonth(parseInt(value))}
+                  >
+                    <SelectTrigger id="month-select" className="w-[140px] bg-white border-yellow-300">
+                      <SelectValue placeholder="Seleccionar mes" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {monthNames.map((name, index) => (
+                        <SelectItem key={index} value={index.toString()}>
+                          {name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Label htmlFor="year-select" className="text-sm text-yellow-700">Año:</Label>
+                  <Select
+                    value={selectedYear.toString()}
+                    onValueChange={(value) => setSelectedYear(parseInt(value))}
+                  >
+                    <SelectTrigger id="year-select" className="w-[100px] bg-white border-yellow-300">
+                      <SelectValue placeholder="Año" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {availableYears.map((year) => (
+                        <SelectItem key={year} value={year.toString()}>
+                          {year}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <Badge className="bg-yellow-500 text-white ml-2">
+                  {monthNames[selectedMonth]} {selectedYear}
+                </Badge>
               </div>
             </div>
           </CardContent>

@@ -238,13 +238,25 @@ export function PlanningModal({ dispatch, onClose, onSuccess }: PlanningModalPro
             )}
 
             {dispatch.suggestedDeliveryDate && (
-              <div className="text-sm bg-blue-50 p-2 rounded border-l-4 border-blue-400">
-                <strong>📅 Fecha Entrega Sugerida:</strong>{' '}
-                <span className="font-semibold text-blue-700">
-                  {new Date(dispatch.suggestedDeliveryDate).toLocaleDateString('es-CL')}
-                </span>
-                <div className="text-xs text-blue-600 mt-1">
-                  Recomendación del vendedor para la planificación
+              <div className="text-sm bg-yellow-50 p-3 rounded-lg border-2 border-yellow-400 shadow-sm">
+                <div className="flex items-center gap-2">
+                  <span className="text-xl">📅</span>
+                  <div>
+                    <div className="font-bold text-yellow-800">
+                      Cliente solicitó entrega para:
+                    </div>
+                    <div className="text-lg font-bold text-yellow-900">
+                      {new Date(dispatch.suggestedDeliveryDate).toLocaleDateString('es-CL', {
+                        weekday: 'long',
+                        year: 'numeric',
+                        month: 'long',
+                        day: 'numeric'
+                      })}
+                    </div>
+                  </div>
+                </div>
+                <div className="text-xs text-yellow-700 mt-2 italic">
+                  ⚠️ Por favor priorizar esta fecha si es posible
                 </div>
               </div>
             )}
@@ -288,7 +300,30 @@ export function PlanningModal({ dispatch, onClose, onSuccess }: PlanningModalPro
                   })()}
                   onChange={(e) => setScheduledDate(e.target.value)}
                   required
+                  className={(() => {
+                    if (!dispatch.suggestedDeliveryDate || !scheduledDate) return '';
+                    const suggested = formatDateForInput(dispatch.suggestedDeliveryDate);
+                    return scheduledDate === suggested ? 'border-green-500 bg-green-50' : 'border-orange-400';
+                  })()}
                 />
+                {/* Advertencia si fecha diferente a la solicitada */}
+                {dispatch.suggestedDeliveryDate && scheduledDate && (() => {
+                  const suggested = formatDateForInput(dispatch.suggestedDeliveryDate);
+                  if (scheduledDate !== suggested) {
+                    return (
+                      <div className="text-xs text-orange-600 mt-1 flex items-center gap-1">
+                        <span>⚠️</span>
+                        <span>La fecha seleccionada es diferente a la solicitada por el cliente</span>
+                      </div>
+                    );
+                  }
+                  return (
+                    <div className="text-xs text-green-600 mt-1 flex items-center gap-1">
+                      <span>✓</span>
+                      <span>Coincide con fecha solicitada</span>
+                    </div>
+                  );
+                })()}
               </div>
 
               <div className="space-y-2">

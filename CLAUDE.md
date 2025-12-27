@@ -3,7 +3,308 @@
 ## Información del Proyecto
 - **Nombre**: NextJS Auth App - Sistema de Gestión de Usuarios y Verificación de Pagos
 - **Tecnología**: Next.js 14, React 18, TypeScript, PostgreSQL, Prisma ORM
-- **Fecha última actualización**: 2025-11-24
+- **Fecha última actualización**: 2025-12-27
+
+## Cambios Implementados - Sesión 2025-12-27
+
+### 19. Filtro de Mes/Año y Ordenamiento en Verificaciones de Pago
+
+**Fecha**: 2025-12-27
+**Cambios realizados**:
+- ✅ Selector de mes/año en página de Verificación de Pagos (vendedores)
+- ✅ Selector de mes/año en página de Gestión de Verificaciones (admin)
+- ✅ Ordenamiento por prioridad: pendientes primero en ambas páginas
+- ✅ Opción "Todos" para ver verificaciones sin filtro de fecha
+- ✅ Estadísticas e indicadores filtrados por período seleccionado
+
+**Archivos modificados**:
+- `app/verificacion-pagos/page.tsx` - Selector mes/año y ordenamiento
+- `app/admin/verificaciones/page.tsx` - Selector mes/año con opción "Todos"
+
+**Funcionalidades Implementadas:**
+
+**1. Selector de Mes/Año (Panel Amarillo):**
+- Ubicado arriba de los paneles de estadísticas
+- Dropdown de mes (Enero - Diciembre) con opción "Todos"
+- Dropdown de año (últimos 3 años)
+- Badge mostrando período seleccionado
+- Selector de año se oculta cuando se selecciona "Todos"
+
+**2. Filtrado por Período:**
+- Estadísticas calculadas según mes/año seleccionado
+- Tabla de verificaciones filtrada por período
+- Opción "Todos" muestra todas las verificaciones sin filtro
+
+**3. Ordenamiento por Prioridad:**
+- Documentos/verificaciones pendientes aparecen primero
+- Luego ordenados por fecha más reciente
+- Mejora la eficiencia del flujo de trabajo
+
+**4. Página Verificación de Pagos (Vendedores):**
+- Selector siempre visible después de filtros ERP
+- Sincronizado con filtro de fecha FchDoc
+- Afecta indicadores y tabla de documentos
+
+**5. Página Gestión de Verificaciones (Admin):**
+- Por defecto muestra "Todos los períodos"
+- Estadísticas y tabla filtradas por selección
+- Mantiene filtros existentes (estado, método, vendedor)
+
+**Interfaz Visual:**
+```
+┌─────────────────────────────────────────────────────────┐
+│ 📅 Período de Consulta:                                 │
+│     Mes: [Todos ▼]  Año: [2025 ▼]  [Todos los períodos] │
+└─────────────────────────────────────────────────────────┘
+```
+
+---
+
+### 18. Mejoras en Sistema de Despachos: Fecha Solicitada y RETIRO_LOCAL Automático
+
+**Fecha**: 2025-12-27
+**Cambios realizados**:
+- ✅ RETIRO_LOCAL ahora va directo a IN_TRANSIT (sin pasar por planificación)
+- ✅ Fotos opcionales para completar retiros locales
+- ✅ Fecha sugerida destacada en modal de planificación
+- ✅ Columna "Fecha Solicitada" en tab PENDING de Plan Despachos
+- ✅ Ordenamiento automático por fecha sugerida (más cercanas primero)
+- ✅ Indicadores visuales 🏪 para retiros locales en despachadores
+- ✅ API de driver actualizada para incluir retiros locales y sucursales
+
+**Archivos modificados**:
+
+**APIs Actualizadas:**
+- `app/api/dispatches/route.ts` - RETIRO_LOCAL crea con status IN_TRANSIT automáticamente
+- `app/api/dispatches/complete/route.ts` - Fotos opcionales para RETIRO_LOCAL
+- `app/api/dispatches/driver/route.ts` - Incluye retiros locales y datos de sucursal
+
+**Componentes UI Actualizados:**
+- `app/components/ui/planning-modal.tsx` - Indicador visual de fecha solicitada por cliente
+- `app/plan-despachos/page.tsx` - Tabla PENDING con fecha solicitada y ordenamiento
+- `app/despachadores/page.tsx` - Indicador visual 🏪 para retiros locales
+
+**Funcionalidades Implementadas:**
+
+**1. RETIRO_LOCAL Directo a IN_TRANSIT:**
+```
+Flujo Anterior: RETIRO_LOCAL → PENDING → SCHEDULED → IN_TRANSIT → DELIVERED
+Flujo Nuevo:    RETIRO_LOCAL → IN_TRANSIT (automático) → DELIVERED
+```
+- Sin transporte asignado (`transportId: null`)
+- `startedAt` se marca automáticamente al crear
+- No requiere planificación manual
+- Visible inmediatamente en panel de despachadores
+
+**2. Fotos Opcionales para Retiros:**
+- Los retiros locales no requieren foto obligatoria
+- El cliente firma en persona al retirar
+- Modal muestra "Fotos de Evidencia (Opcional)"
+- Botón habilitado sin fotos para retiros
+- Mensaje diferenciado: "Confirmar Retiro" vs "Completar Entrega"
+
+**3. Fecha Solicitada en Planificación:**
+- Cuadro amarillo destacado: "📅 Cliente solicitó entrega para: [fecha]"
+- Indicador ✓ verde si fecha seleccionada coincide
+- Advertencia ⚠️ naranja si fecha difiere
+- Pre-llenado automático con fecha sugerida
+
+**4. Tabla PENDING Mejorada:**
+- Nueva columna "Fecha Solicitada" con icono 📅
+- Ordenamiento: fechas más cercanas primero
+- Filas amarillas para fechas urgentes (hoy/mañana)
+- Badge naranja con ⚠️ para fechas urgentes
+- RETIRO_LOCAL filtrados (van directo a IN_TRANSIT)
+
+**5. Indicador Visual en Despachadores:**
+- Badge púrpura: "🏪 Retiro en Sucursal: [Nombre]"
+- Tarjetas con fondo púrpura diferenciado
+- Mensaje: "Esperando que el cliente retire en sucursal"
+- Botón púrpura: "Confirmar Retiro"
+- Modal adaptado para retiros
+
+**6. Tabla IN_TRANSIT Mejorada (Plan Despachos):**
+- Nueva columna "Tipo" con badges visuales:
+  - 🏪 Retiro Local (púrpura)
+  - Courier (azul)
+  - Despacho (verde)
+- Filas púrpuras para retiros locales
+- "Sin transporte" para retiros (N/A)
+- Mensaje contextual según tipo
+
+**Flujo Visual RETIRO_LOCAL:**
+```
+1. Vendedor crea despacho tipo RETIRO_LOCAL
+2. Sistema crea con status IN_TRANSIT automáticamente
+3. Aparece en panel Despachadores con badge 🏪
+4. Despachador espera que cliente llegue a sucursal
+5. Click "Confirmar Retiro" (fotos opcionales)
+6. Despacho marcado como DELIVERED
+```
+
+**Validaciones y Seguridad:**
+- Fotos obligatorias solo para COURIER y DESPACHO
+- RETIRO_LOCAL no aparece en tab PENDING
+- API de driver incluye retiros sin transporte
+- Permisos diferenciados mantenidos
+
+**Beneficios del Sistema:**
+- **Eficiencia**: Retiros no requieren planificación manual
+- **Claridad**: Indicadores visuales diferenciados
+- **Flexibilidad**: Fotos opcionales para retiros
+- **Priorización**: Fechas solicitadas visibles y ordenadas
+- **Usabilidad**: Flujos adaptados al tipo de despacho
+
+---
+
+### 17. Mejoras en Vista de Documentos ERP
+
+**Fecha**: 2025-12-27
+**Cambios realizados**:
+- ✅ Sistema de 4 estados para verificación de pago con colores diferenciados
+- ✅ Sistema de 2 estados para despachos asignados
+- ✅ Ordenamiento automático con documentos sin verificar primero
+- ✅ Filas rojas para documentos sin verificar (CT/NV con estado A)
+- ✅ Enriquecimiento de documentos con estados desde BD
+
+**Archivos modificados:**
+- `app/api/erp/documents/route.ts` - Enriquecimiento con estados de verificación y despacho
+- `app/documentos/page.tsx` - Ordenamiento, colores y badges de estado
+
+**Funcionalidades Implementadas:**
+
+**1. Estados de Verificación de Pago:**
+| Estado | Color | Badge |
+|--------|-------|-------|
+| Sin Verificar | Rojo | `bg-red-100 text-red-800` |
+| Pendiente Aprobación | Naranja | `bg-orange-100 text-orange-800` |
+| Rechazado | Rojo oscuro | `bg-red-200 text-red-900` |
+| Verificado | Verde | `bg-green-100 text-green-800` |
+
+**2. Estados de Despacho:**
+| Estado | Color | Badge |
+|--------|-------|-------|
+| Sin Asignar | Gris | `bg-gray-100 text-gray-800` |
+| Despacho Asignado | Verde | `bg-green-100 text-green-800` |
+
+**3. Ordenamiento Automático:**
+- Prioridad 1: Documentos elegibles (CT/NV con estado A)
+- Prioridad 2: Estado de verificación (sin verificar primero)
+- Prioridad 3: Fecha de emisión (más recientes primero)
+
+**4. Filas Rojas:**
+- Documentos CT/NV con estado A sin verificar
+- Solo para documentos elegibles para verificación
+- Fácil identificación visual de pendientes
+
+---
+
+### 16. Dashboard de Métricas para Vendedores
+
+**Fecha**: 2025-12-27
+**Cambios realizados**:
+- ✅ Implementado sistema completo de métricas de ventas en el dashboard del vendedor
+- ✅ Creada API `/api/dashboard/vendor-metrics` para obtener métricas desde el ERP
+- ✅ Desarrollados 6 nuevos componentes UI con gráficos interactivos (Recharts)
+- ✅ Selector de mes para filtrar métricas históricas
+- ✅ Comparativo de ventas de últimos 3 meses
+- ✅ Historial de comisiones de últimos 6 meses
+- ✅ Indicador de mejor mes de ventas
+- ✅ Gráficos de progreso y distribución de documentos
+
+**Archivos creados/modificados**:
+
+**Nueva API:**
+- `app/api/dashboard/vendor-metrics/route.ts` - API completa para métricas del vendedor
+
+**Nuevos Componentes UI:**
+- `app/components/ui/metric-card.tsx` - Tarjetas de métricas individuales con iconos y tendencias
+- `app/components/ui/progress-gauge.tsx` - Gráfico circular de progreso (RadialBarChart)
+- `app/components/ui/month-selector.tsx` - Modal selector de mes con calendario
+- `app/components/ui/sales-bar-chart.tsx` - Gráfico de barras comparativo de ventas
+- `app/components/ui/distribution-pie-chart.tsx` - Gráfico de torta para distribución
+- `app/components/ui/info-card.tsx` - Tarjetas informativas y BestMonthCard
+
+**Archivos modificados:**
+- `app/dashboard/page.tsx` - Integración completa del dashboard de métricas
+- `app/lib/types.ts` - Nuevos tipos para métricas del vendedor
+
+**Funcionalidades Implementadas:**
+
+**1. Métricas del Mes Actual:**
+- Total de documentos CT/NV del vendedor
+- Documentos con pago verificado (APPROVED)
+- Documentos pendientes de verificar
+- Porcentaje de progreso de cierre
+- Ventas brutas totales del mes
+
+**2. Gráficos Interactivos:**
+- **ProgressGauge**: Indicador circular del progreso de verificación
+  - Verde (≥80%), Azul (≥50%), Naranja (<50%)
+- **SalesBarChart**: Comparativo de ventas últimos 3 meses
+- **DistributionPieChart**: Verificados vs Pendientes
+
+**3. Selector de Mes:**
+- Botón amarillo "FILTRO MES: [Mes Año]"
+- Modal con calendario de últimos 3 años
+- Meses futuros deshabilitados
+- Recarga métricas al cambiar mes
+
+**4. Cards Informativos:**
+- **Comisiones Últimos 6 Meses**: Historial de comisiones calculadas
+- **Documentos del Mes**: Total, verificados y tasa de cierre
+- **Meta Mensual**: Comparación mes anterior vs actual
+- **Mejor Mes del Año**: Mes con mayores ventas brutas
+
+**5. Cálculo de Comisiones:**
+- Fórmula: `(MntNeto - FleteNeto) × porcentaje_comision + comision_base`
+- Se obtiene de la configuración del usuario en BD
+- Historial de 7 meses para análisis
+
+**Tipos Agregados (app/lib/types.ts):**
+```typescript
+interface VendorMetrics {
+  currentMonth: VendorMetricsCurrentMonth;
+  monthlyComparison: MonthlyComparisonData[];
+  commissionsHistory: CommissionHistoryData[];
+  bestMonth: BestMonthData;
+  monthComparison: MonthComparisonData;
+  documentDistribution: DistributionData[];
+}
+
+interface VendorInfo {
+  codigoVendedor: string;
+  porcentajeComision: number | null;
+  comisionBase: number | null;
+}
+```
+
+**Validaciones y Seguridad:**
+- Solo usuarios autenticados pueden acceder
+- Métricas filtradas por código de vendedor del usuario
+- Verificación de sesión en cada request
+- Manejo de errores con mensajes claros
+
+**Flujo de Datos:**
+1. Usuario accede al dashboard
+2. Frontend llama a `/api/dashboard/vendor-metrics` con mes seleccionado
+3. API autentica con ERP usando credenciales configuradas
+4. Obtiene documentos CT/NV del vendedor para el período
+5. Cruza con verificaciones de pago de la BD
+6. Calcula métricas, comisiones e indicadores
+7. Retorna datos estructurados al frontend
+8. Componentes renderizan gráficos interactivos
+
+**Dependencias:**
+- `recharts`: Librería de gráficos para React
+- Componentes: RadialBarChart, BarChart, PieChart
+
+**Notas Importantes:**
+- Las comisiones requieren que el vendedor tenga `porcentaje_comision` y `comision_base` configurados en la BD
+- Vendedores sin configuración de comisiones mostrarán $0
+- El ERP debe estar accesible para obtener datos
+
+---
 
 ## Cambios Implementados - Sesión 2025-11-24
 
@@ -1074,7 +1375,7 @@ tail -f /var/log/nextjs-auth-app.log
    - Documentar procedimientos de recuperación
 
 ## Estado Final
-✅ **APLICACIÓN FUNCIONANDO**: Sistema estable en modo desarrollo
+✅ **APLICACIÓN FUNCIONANDO**: Sistema estable en modo producción
 ✅ Diagnóstico completado y documentado
 ✅ Soluciones identificadas y documentadas
 ✅ Plan de acción establecido
@@ -1083,18 +1384,28 @@ tail -f /var/log/nextjs-auth-app.log
 ✅ Base de datos conectada y funcionando
 ✅ Totalización por medio de pago funcional para administradores y vendedores
 ✅ Configuración ERP parametrizable desde panel de administración
-✅ **NUEVO**: Módulo completo de Transportes con mantenedor CRUD
-✅ **NUEVO**: Sistema de Despachos con modal integrado en documentos ERP
-✅ **NUEVO**: Planificación de despachos con fechas y horarios AM/PM
-✅ **NUEVO**: Monitor de despachos en tiempo real con vista de calendario
-✅ **NUEVO**: Datos geográficos completos de Chile (16 regiones, 347 comunas)
-✅ **NUEVO**: Tipos de despacho (Retiro Local, Courier, Despacho) con sucursales
-✅ **NUEVO**: Sistema de estados completo (PENDING/SCHEDULED/IN_TRANSIT/DELIVERED/CANCELLED)
-✅ **NUEVO**: Panel de Despachador con evidencia fotográfica obligatoria
-✅ **NUEVO**: Tabs organizados por estados en Plan de Despachos
-✅ **NUEVO**: Botón "Reiniciar" para resetear despachos
-✅ **NUEVO**: Modal de revisión de fotos de entrega para administradores
-✅ **NUEVO**: Separación estricta de permisos (Admins vs Despachadores)
-✅ **NUEVO**: Trazabilidad completa con evidencia fotográfica obligatoria
-✅ **NUEVO**: Vista pública sin autenticación para monitor
-✅ **NUEVO**: Sistema parametrizable de equivalencias de tallas
+✅ Módulo completo de Transportes con mantenedor CRUD
+✅ Sistema de Despachos con modal integrado en documentos ERP
+✅ Planificación de despachos con fechas y horarios AM/PM
+✅ Monitor de despachos en tiempo real con vista de calendario
+✅ Datos geográficos completos de Chile (16 regiones, 347 comunas)
+✅ Tipos de despacho (Retiro Local, Courier, Despacho) con sucursales
+✅ Sistema de estados completo (PENDING/SCHEDULED/IN_TRANSIT/DELIVERED/CANCELLED)
+✅ Panel de Despachador con evidencia fotográfica obligatoria
+✅ Tabs organizados por estados en Plan de Despachos
+✅ Botón "Reiniciar" para resetear despachos
+✅ Modal de revisión de fotos de entrega para administradores
+✅ Separación estricta de permisos (Admins vs Despachadores)
+✅ Trazabilidad completa con evidencia fotográfica obligatoria
+✅ Vista pública sin autenticación para monitor
+✅ Sistema parametrizable de equivalencias de tallas
+✅ **2025-12-27**: Estados de verificación de pago con colores diferenciados (4 estados)
+✅ **2025-12-27**: Estados de despacho en documentos ERP (2 estados)
+✅ **2025-12-27**: Ordenamiento automático por documentos sin verificar
+✅ **2025-12-27**: Filas rojas para documentos pendientes de verificar
+✅ **2025-12-27**: RETIRO_LOCAL directo a IN_TRANSIT (sin planificación)
+✅ **2025-12-27**: Fotos opcionales para retiros locales
+✅ **2025-12-27**: Fecha solicitada destacada en modal de planificación
+✅ **2025-12-27**: Columna "Fecha Solicitada" con ordenamiento en Plan Despachos
+✅ **2025-12-27**: Indicadores visuales 🏪 para retiros en despachadores
+✅ **2025-12-27**: Dashboard de métricas para vendedores con gráficos interactivos

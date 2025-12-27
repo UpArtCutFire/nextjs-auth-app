@@ -81,60 +81,69 @@ export async function POST(request: Request) {
       photoIndex++;
     }
 
-    if (photoFiles.length === 0) {
+    // Para RETIRO_LOCAL las fotos son opcionales (cliente firma en persona)
+    // Para otros tipos de despacho, las fotos son obligatorias
+    const isRetiroLocal = dispatch.tipoDespacho === 'RETIRO_LOCAL';
+
+    if (photoFiles.length === 0 && !isRetiroLocal) {
       return NextResponse.json(
         { error: 'Debe subir al menos una foto de evidencia' },
         { status: 400 }
       );
     }
 
-    console.log(`[Complete Dispatch] Procesando ${photoFiles.length} fotos`);
+    console.log(`[Complete Dispatch] Procesando ${photoFiles.length} fotos (tipoDespacho: ${dispatch.tipoDespacho})`);
 
-    // Crear directorio para fotos si no existe
-    const uploadsDir = join(process.cwd(), 'public', 'uploads', 'delivery-photos');
-    if (!existsSync(uploadsDir)) {
-      await mkdir(uploadsDir, { recursive: true });
-    }
+    let photoPromises: Promise<any>[] = [];
 
-    // Guardar fotos y crear registros
-    const photoPromises = photoFiles.map(async (file, index) => {
-      const bytes = await file.arrayBuffer();
-      const buffer = Buffer.from(bytes);
-
-      // Generar nombre único usando UUID (igual que payment-verifications)
-      let extension = 'jpg'; // Default para fotos de cámara
-
-      if (file.name && file.name.includes('.')) {
-        extension = file.name.split('.').pop()?.toLowerCase() || 'jpg';
-      } else if (file.type) {
-        // Usar el tipo MIME para determinar extensión
-        const mimeToExt: Record<string, string> = {
-          'image/jpeg': 'jpg',
-          'image/jpg': 'jpg',
-          'image/png': 'png',
-          'image/gif': 'gif',
-          'image/webp': 'webp',
-          'image/heic': 'heic',
-          'image/heif': 'heif'
-        };
-        extension = mimeToExt[file.type] || 'jpg';
+    // Solo procesar fotos si hay alguna
+    if (photoFiles.length > 0) {
+      // Crear directorio para fotos si no existe
+      const uploadsDir = join(process.cwd(), 'public', 'uploads', 'delivery-photos');
+      if (!existsSync(uploadsDir)) {
+        await mkdir(uploadsDir, { recursive: true });
       }
 
-      const fileName = `${uuidv4()}.${extension}`;
-      const filePath = join(uploadsDir, fileName);
-      
-      // Guardar archivo
-      await writeFile(filePath, buffer);
-      
-      // Crear registro en la base de datos
-      return prisma.deliveryPhoto.create({
-        data: {
-          dispatchId: dispatchId,
-          photoUrl: `/uploads/delivery-photos/${fileName}`,
-          comment: index === 0 ? comment : null // Solo el primer registro tiene el comentario
+      // Guardar fotos y crear registros
+      photoPromises = photoFiles.map(async (file, index) => {
+        const bytes = await file.arrayBuffer();
+        const buffer = Buffer.from(bytes);
+
+        // Generar nombre único usando UUID (igual que payment-verifications)
+        let extension = 'jpg'; // Default para fotos de cámara
+
+        if (file.name && file.name.includes('.')) {
+          extension = file.name.split('.').pop()?.toLowerCase() || 'jpg';
+        } else if (file.type) {
+          // Usar el tipo MIME para determinar extensión
+          const mimeToExt: Record<string, string> = {
+            'image/jpeg': 'jpg',
+            'image/jpg': 'jpg',
+            'image/png': 'png',
+            'image/gif': 'gif',
+            'image/webp': 'webp',
+            'image/heic': 'heic',
+            'image/heif': 'heif'
+          };
+          extension = mimeToExt[file.type] || 'jpg';
         }
+
+        const fileName = `${uuidv4()}.${extension}`;
+        const filePath = join(uploadsDir, fileName);
+
+        // Guardar archivo
+        await writeFile(filePath, buffer);
+
+        // Crear registro en la base de datos
+        return prisma.deliveryPhoto.create({
+          data: {
+            dispatchId: dispatchId,
+            photoUrl: `/uploads/delivery-photos/${fileName}`,
+            comment: index === 0 ? comment : null // Solo el primer registro tiene el comentario
+          }
+        });
       });
-    });
+    }
 
     // Ejecutar todas las operaciones en paralelo
     const [updatedDispatch, ...photos] = await Promise.all([
@@ -172,12 +181,16 @@ export async function POST(request: Request) {
           }
         }
       }),
-      // Crear registros de fotos
+      // Crear registros de fotos (si hay)
       ...photoPromises
     ]);
 
+    const message = isRetiroLocal
+      ? 'Retiro completado correctamente'
+      : 'Entrega completada correctamente';
+
     return NextResponse.json({
-      message: 'Entrega completada correctamente',
+      message,
       dispatch: updatedDispatch,
       photosUploaded: photos.length
     });

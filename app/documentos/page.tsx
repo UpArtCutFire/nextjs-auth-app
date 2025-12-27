@@ -41,9 +41,20 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
-import { Loader2, FileText, Search, AlertCircle, Calendar, ChevronDown, Eye, ExternalLink, CameraIcon, ShieldCheck, Truck } from 'lucide-react';
+import { Loader2, FileText, Search, AlertCircle, Calendar, ChevronDown, Eye, ExternalLink, CameraIcon, ShieldCheck, Truck, CheckCircle } from 'lucide-react';
 import { ERPDocument, DocumentReference } from '@/lib/types';
 import { toast } from 'sonner';
+
+// Función para obtener prioridad de verificación (menor número = mayor prioridad)
+const getVerificationPriority = (status: string | undefined): number => {
+  switch(status) {
+    case 'none': return 0;      // Sin verificar - máxima prioridad
+    case 'rejected': return 1;  // Rechazado - segunda prioridad
+    case 'pending': return 2;   // Pendiente aprobación
+    case 'approved': return 3;  // Verificado - menor prioridad
+    default: return 4;
+  }
+};
 import { PaymentVerificationModal } from '@/components/ui/payment-verification-modal';
 import { PaymentVerificationGrid } from '@/components/ui/payment-verification-grid';
 import { DispatchModal } from '@/components/ui/dispatch-modal';
@@ -306,9 +317,43 @@ export default function DocumentosPage() {
       }
 
       const docs = data.documents || [];
-      setDocuments(docs);
-      setTotalDocuments(docs.length);
-      toast.success(`${docs.length} documentos cargados`);
+
+      // Ordenar documentos por prioridad de verificación (sin verificar primero)
+      // También considerar si es elegible para verificación (CT/NV con estado A)
+      const sortedDocs = [...docs].sort((a, b) => {
+        const docA = a as any;
+        const docB = b as any;
+
+        // Primero: Documentos elegibles para verificación (CT/NV con estado A)
+        const isEligibleA = ['CT', 'NV'].includes(docA.TipoDoc) && docA.EstadoProcesoDoc === 'A';
+        const isEligibleB = ['CT', 'NV'].includes(docB.TipoDoc) && docB.EstadoProcesoDoc === 'A';
+
+        if (isEligibleA && !isEligibleB) return -1;
+        if (!isEligibleA && isEligibleB) return 1;
+
+        // Segundo: Por estado de verificación (sin verificar primero)
+        const priorityA = getVerificationPriority(docA.verificationStatus);
+        const priorityB = getVerificationPriority(docB.verificationStatus);
+
+        if (priorityA !== priorityB) return priorityA - priorityB;
+
+        // Tercero: Por fecha descendente (más recientes primero)
+        const dateA = new Date(docA.FchDoc || 0).getTime();
+        const dateB = new Date(docB.FchDoc || 0).getTime();
+        return dateB - dateA;
+      });
+
+      console.log('[ORDENAMIENTO] Documentos ordenados:', sortedDocs.slice(0, 5).map((d: any) => ({
+        NumDoc: d.NumDoc,
+        TipoDoc: d.TipoDoc,
+        Estado: d.EstadoProcesoDoc,
+        VerificationStatus: d.verificationStatus,
+        HasDispatch: d.hasDispatch
+      })));
+
+      setDocuments(sortedDocs);
+      setTotalDocuments(sortedDocs.length);
+      toast.success(`${sortedDocs.length} documentos cargados`);
       
     } catch (error) {
       console.error('Error cargando documentos:', error);
@@ -710,8 +755,17 @@ export default function DocumentosPage() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {currentDocuments.map((doc, index) => (
-                        <TableRow key={index}>
+                      {currentDocuments.map((doc, index) => {
+                        const verificationStatus = (doc as any).verificationStatus;
+                        // Determinar clases de fila según estado de verificación
+                        const rowClasses = verificationStatus === 'none'
+                          ? 'bg-red-50 border-l-4 border-l-red-500'
+                          : verificationStatus === 'rejected'
+                            ? 'bg-red-100 border-l-4 border-l-red-700'
+                            : '';
+
+                        return (
+                        <TableRow key={index} className={rowClasses}>
                           <TableCell className="font-medium">{doc.NumDoc || '-'}</TableCell>
                           <TableCell>{doc.TipoDoc || '-'}</TableCell>
                           <TableCell>{formatDate(doc.FchDoc)}</TableCell>
@@ -744,63 +798,126 @@ export default function DocumentosPage() {
                             {(() => {
                               const isEligible = isEligibleForPaymentVerification(doc);
                               const userPerfil = (session?.user as any)?.perfil;
-                              
-                              // Debug para planificador
-                              if (userPerfil === 'planificador' && !isEligible) {
-                                console.log('⚠️ Planificador - Documento NO elegible:', {
-                                  docNumero: doc.NumDoc,
-                                  docTipo: doc.TipoDoc,
-                                  docEstado: doc.EstadoProcesoDoc,
-                                  isEligible
-                                });
-                              }
-                              
-                              if (isEligible) {
-                                return (
-                                  <Button
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => openPaymentVerificationModal(doc)}
-                                    className="flex items-center gap-2"
-                                  >
-                                    {userPerfil === 'administrador' ? (
-                                      <>
-                                        <Eye className="h-4 w-4" />
-                                        Ver Verificación
-                                      </>
-                                    ) : (
-                                      <>
-                                        <CameraIcon className="h-4 w-4" />
-                                        Verificar Pago
-                                      </>
-                                    )}
-                                  </Button>
-                                );
-                              } else {
+
+                              // Si no es elegible, mostrar texto explicativo
+                              if (!isEligible) {
                                 return (
                                   <span className="text-muted-foreground text-sm">
-                                    {(userPerfil === 'vendedor' || userPerfil === 'planificador') 
-                                      ? 'No elegible' 
-                                      : 'Solo vendedores/planificadores'
+                                    {(userPerfil === 'vendedor' || userPerfil === 'planificador')
+                                      ? 'No elegible'
+                                      : 'Solo CT/NV activos'
                                     }
                                   </span>
                                 );
                               }
+
+                              // Sistema de 4 estados visuales
+                              switch(verificationStatus) {
+                                case 'none':
+                                  // Sin Verificar - Rojo claro
+                                  return (
+                                    <Button
+                                      size="sm"
+                                      onClick={() => openPaymentVerificationModal(doc)}
+                                      className="bg-red-100 text-red-800 hover:bg-red-200 border-red-300 flex items-center gap-2"
+                                    >
+                                      <CameraIcon className="h-4 w-4" />
+                                      Sin Verificar
+                                    </Button>
+                                  );
+
+                                case 'pending':
+                                  // Pendiente Aprobación - Naranja
+                                  return (
+                                    <Button
+                                      size="sm"
+                                      onClick={() => openPaymentVerificationModal(doc)}
+                                      className="bg-orange-100 text-orange-800 hover:bg-orange-200 border-orange-300 flex items-center gap-2"
+                                    >
+                                      <ShieldCheck className="h-4 w-4" />
+                                      Pendiente Aprobación
+                                    </Button>
+                                  );
+
+                                case 'rejected':
+                                  // Rechazado - Rojo oscuro
+                                  return (
+                                    <Button
+                                      size="sm"
+                                      onClick={() => openPaymentVerificationModal(doc)}
+                                      className="bg-red-300 text-red-900 hover:bg-red-400 border-red-500 flex items-center gap-2"
+                                    >
+                                      <AlertCircle className="h-4 w-4" />
+                                      Rechazado - Verificar
+                                    </Button>
+                                  );
+
+                                case 'approved':
+                                  // Verificado - Verde (solo lectura para admins)
+                                  return userPerfil === 'administrador' ? (
+                                    <Button
+                                      size="sm"
+                                      onClick={() => openPaymentVerificationModal(doc)}
+                                      className="bg-green-100 text-green-800 hover:bg-green-200 border-green-300 flex items-center gap-2"
+                                    >
+                                      <CheckCircle className="h-4 w-4" />
+                                      Verificado
+                                    </Button>
+                                  ) : (
+                                    <div className="flex items-center gap-2 px-3 py-1 rounded-md bg-green-100 text-green-800 text-sm font-medium">
+                                      <CheckCircle className="h-4 w-4" />
+                                      Verificado
+                                    </div>
+                                  );
+
+                                default:
+                                  return (
+                                    <Button
+                                      size="sm"
+                                      onClick={() => openPaymentVerificationModal(doc)}
+                                      className="bg-red-100 text-red-800 hover:bg-red-200 border-red-300 flex items-center gap-2"
+                                    >
+                                      <CameraIcon className="h-4 w-4" />
+                                      Sin Verificar
+                                    </Button>
+                                  );
+                              }
                             })()}
                           </TableCell>
                           <TableCell>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => openDispatchModal(doc)}
-                              className="flex items-center gap-2"
-                            >
-                              <Truck className="h-4 w-4" />
-                              Despacho
-                            </Button>
+                            {(() => {
+                              const hasDispatchAssigned = (doc as any).hasDispatch;
+
+                              if (hasDispatchAssigned) {
+                                // Despacho Asignado - Verde
+                                return (
+                                  <Button
+                                    size="sm"
+                                    onClick={() => openDispatchModal(doc)}
+                                    className="bg-green-100 text-green-800 hover:bg-green-200 border-green-300 flex items-center gap-2"
+                                  >
+                                    <CheckCircle className="h-4 w-4" />
+                                    Despacho Asignado
+                                  </Button>
+                                );
+                              }
+
+                              // Sin Asignar - Gris
+                              return (
+                                <Button
+                                  size="sm"
+                                  onClick={() => openDispatchModal(doc)}
+                                  className="bg-gray-100 text-gray-600 hover:bg-gray-200 border-gray-300 flex items-center gap-2"
+                                >
+                                  <Truck className="h-4 w-4" />
+                                  Asignar Despacho
+                                </Button>
+                              );
+                            })()}
                           </TableCell>
                         </TableRow>
-                      ))}
+                        );
+                      })}
                     </TableBody>
                   </Table>
                 </div>

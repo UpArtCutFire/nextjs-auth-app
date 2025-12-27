@@ -6,9 +6,18 @@ import { useEffect, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { DashboardLayout } from '@/components/dashboard-layout';
-import { Users, UserCheck, ShoppingCart, TrendingUp, FileText, DollarSign, Clock, RefreshCw, Loader2 } from 'lucide-react';
+import { Users, UserCheck, ShoppingCart, TrendingUp, FileText, DollarSign, Clock, RefreshCw, Loader2, CheckCircle, AlertTriangle, BarChart3, Target } from 'lucide-react';
 import Link from 'next/link';
 import { toast } from 'sonner';
+
+// Componentes para métricas del vendedor
+import { MetricCard } from '@/components/ui/metric-card';
+import { ProgressGauge } from '@/components/ui/progress-gauge';
+import { MonthSelector } from '@/components/ui/month-selector';
+import { SalesBarChart } from '@/components/ui/sales-bar-chart';
+import { DistributionPieChart } from '@/components/ui/distribution-pie-chart';
+import { InfoCard, BestMonthCard } from '@/components/ui/info-card';
+import { VendorMetrics, VendorInfo } from '@/lib/types';
 
 interface DashboardStats {
   totalUsers: number;
@@ -45,6 +54,16 @@ export default function DashboardPage() {
     txtusuario: string;
     txtpwd: string;
   } | null>(null);
+
+  // Estados para métricas del vendedor
+  const [vendorMetrics, setVendorMetrics] = useState<VendorMetrics | null>(null);
+  const [vendorInfo, setVendorInfo] = useState<VendorInfo | null>(null);
+  const [selectedMonth, setSelectedMonth] = useState<string>(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  });
+  const [loadingVendorMetrics, setLoadingVendorMetrics] = useState(false);
+  const [vendorMetricsError, setVendorMetricsError] = useState<string | null>(null);
 
   // Función para obtener credenciales ERP
   const fetchERPCredentials = async () => {
@@ -164,6 +183,57 @@ export default function DashboardPage() {
     }
   };
 
+  // Función para cargar métricas del vendedor
+  const loadVendorMetrics = async (month?: string) => {
+    try {
+      setLoadingVendorMetrics(true);
+      setVendorMetricsError(null);
+
+      const monthToUse = month || selectedMonth;
+
+      const response = await fetch('/api/dashboard/vendor-metrics', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({ month: monthToUse }),
+      });
+
+      const data = await response.json();
+
+      if (!data.success) {
+        throw new Error(data.error || 'Error cargando métricas');
+      }
+
+      setVendorMetrics(data.metrics);
+      setVendorInfo(data.vendorInfo);
+
+    } catch (error) {
+      console.error('Error cargando métricas del vendedor:', error);
+      setVendorMetricsError(error instanceof Error ? error.message : 'Error cargando métricas');
+      toast.error('Error al cargar métricas de ventas');
+    } finally {
+      setLoadingVendorMetrics(false);
+    }
+  };
+
+  // Manejar cambio de mes
+  const handleMonthChange = (newMonth: string) => {
+    setSelectedMonth(newMonth);
+    loadVendorMetrics(newMonth);
+  };
+
+  // Formatear moneda
+  const formatCurrency = (value: number) => {
+    return new Intl.NumberFormat('es-CL', {
+      style: 'currency',
+      currency: 'CLP',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0
+    }).format(value);
+  };
+
   useEffect(() => {
     const fetchData = async () => {
       try {
@@ -180,6 +250,7 @@ export default function DashboardPage() {
           // Iniciar autenticación ERP automáticamente para estadísticas de cotizaciones
           await authenticateERP();
         } else {
+          // Cargar info de usuario para vendedores
           const response = await fetch('/api/dashboard/user-info', {
             credentials: 'include'
           });
@@ -187,6 +258,9 @@ export default function DashboardPage() {
             const data = await response.json();
             setUserInfo(data);
           }
+
+          // Cargar métricas del vendedor
+          await loadVendorMetrics();
         }
       } catch (error) {
         console.error('Error fetching dashboard data:', error);
@@ -395,23 +469,177 @@ export default function DashboardPage() {
               </CardContent>
             </Card>
 
-            <Card className="hover:shadow-md transition-shadow">
-              <CardHeader>
-                <CardTitle className="flex items-center">
-                  <TrendingUp className="mr-2 h-5 w-5" />
-                  Métricas de Ventas
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-center py-8 text-muted-foreground">
-                  <TrendingUp className="mx-auto h-12 w-12 mb-4 opacity-50" />
-                  <p className="text-lg mb-2">Próximamente</p>
-                  <p className="text-sm">
-                    Las métricas de ventas estarán disponibles cuando se conecte con la API externa.
-                  </p>
-                </div>
-              </CardContent>
-            </Card>
+            {/* Header de Métricas */}
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+              <div className="flex items-center gap-2">
+                <TrendingUp className="h-6 w-6 text-blue-600" />
+                <h2 className="text-2xl font-bold">Métricas de Ventas</h2>
+              </div>
+              <div className="flex items-center gap-4">
+                <span className="text-sm text-blue-600 bg-blue-50 px-3 py-1 rounded font-medium">
+                  MÉTRICAS MES ACTUAL DEL VENDEDOR // CON FILTRO POR MES
+                </span>
+                <MonthSelector
+                  selectedMonth={selectedMonth}
+                  onChange={handleMonthChange}
+                />
+              </div>
+            </div>
+
+            {/* Error de métricas */}
+            {vendorMetricsError && (
+              <Card className="border-red-200 bg-red-50">
+                <CardContent className="pt-6">
+                  <div className="flex items-center gap-3 text-red-700">
+                    <AlertTriangle className="h-5 w-5" />
+                    <p className="text-sm">{vendorMetricsError}</p>
+                    <Button
+                      onClick={() => loadVendorMetrics()}
+                      variant="outline"
+                      size="sm"
+                      className="ml-auto"
+                    >
+                      <RefreshCw className="h-4 w-4 mr-2" />
+                      Reintentar
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* 4 Cards de KPIs principales */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              <MetricCard
+                title="CT/NV Pendientes"
+                value={vendorMetrics?.currentMonth.totalDocuments ?? '--'}
+                subtitle="Documentos para facturar"
+                icon={<FileText className="h-5 w-5 text-orange-600" />}
+                iconBgColor="bg-orange-100"
+                isLoading={loadingVendorMetrics}
+              />
+
+              <MetricCard
+                title="Pagos Verificados"
+                value={vendorMetrics?.currentMonth.verifiedDocuments ?? '--'}
+                subtitle="Listos para facturar"
+                icon={<CheckCircle className="h-5 w-5 text-green-600" />}
+                iconBgColor="bg-green-100"
+                isLoading={loadingVendorMetrics}
+              />
+
+              <MetricCard
+                title="Sin Verificar ⚠️"
+                value={vendorMetrics?.currentMonth.pendingDocuments ?? '--'}
+                subtitle="Pendientes de verificar"
+                icon={<AlertTriangle className="h-5 w-5 text-orange-700" />}
+                alertBg={true}
+                isLoading={loadingVendorMetrics}
+              />
+
+              <ProgressGauge
+                percentage={vendorMetrics?.currentMonth.progressPercentage ?? 0}
+                title="Progreso Cierre"
+                subtitle="Completado"
+                isLoading={loadingVendorMetrics}
+              />
+            </div>
+
+            {/* Fila de Gráficos */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              <SalesBarChart
+                data={vendorMetrics?.monthlyComparison ?? []}
+                title="Comparativo Últimos 3 Meses"
+                isLoading={loadingVendorMetrics}
+              />
+
+              <DistributionPieChart
+                data={vendorMetrics?.documentDistribution ?? []}
+                title="Distribución Documentos"
+                isLoading={loadingVendorMetrics}
+              />
+
+              <BestMonthCard
+                bestMonthLabel={vendorMetrics?.bestMonth.monthLabel ?? '--'}
+                bestMonthAmount={vendorMetrics?.bestMonth.grossSales ?? 0}
+                currentMonthLabel={vendorMetrics?.monthComparison.currentMonth.label ?? '--'}
+                currentMonthAmount={vendorMetrics?.currentMonth.grossSales ?? 0}
+                isLoading={loadingVendorMetrics}
+              />
+            </div>
+
+            {/* Fila de Cards Informativas */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              <InfoCard
+                title="Comisiones Últimos 6 Meses"
+                icon={<DollarSign className="h-4 w-4" />}
+                variant="blue"
+                isLoading={loadingVendorMetrics}
+                items={
+                  vendorMetrics?.commissionsHistory.slice(-6).map(c => ({
+                    label: c.monthLabel,
+                    value: c.commission
+                  })) ?? []
+                }
+              />
+
+              <InfoCard
+                title="Documentos del Mes"
+                icon={<FileText className="h-4 w-4" />}
+                variant="blue"
+                isLoading={loadingVendorMetrics}
+                items={[
+                  {
+                    label: 'Total Emitidos',
+                    value: vendorMetrics?.currentMonth.totalDocuments ?? 0
+                  },
+                  {
+                    label: 'Verificados',
+                    value: vendorMetrics?.currentMonth.verifiedDocuments ?? 0
+                  },
+                  {
+                    label: 'Tasa de Cierre',
+                    value: `${vendorMetrics?.currentMonth.progressPercentage ?? 0}%`,
+                    highlight: true
+                  }
+                ]}
+              />
+
+              <InfoCard
+                title="Meta Mensual"
+                icon={<Target className="h-4 w-4" />}
+                variant="blue"
+                isLoading={loadingVendorMetrics}
+                items={[
+                  {
+                    label: vendorMetrics?.monthComparison.previousMonth.label ?? 'Mes Anterior',
+                    value: vendorMetrics?.monthComparison.previousMonth.commission ?? 0
+                  },
+                  {
+                    label: vendorMetrics?.monthComparison.currentMonth.label ?? 'Mes Actual',
+                    value: vendorMetrics?.monthComparison.currentMonth.commission ?? 0,
+                    highlight: true
+                  }
+                ]}
+              />
+
+              <InfoCard
+                title="Mejor Mes del Año"
+                icon={<BarChart3 className="h-4 w-4" />}
+                variant="green"
+                isLoading={loadingVendorMetrics}
+                items={[
+                  {
+                    label: vendorMetrics?.bestMonth.monthLabel ?? '--',
+                    value: vendorMetrics?.bestMonth.grossSales ?? 0,
+                    highlight: true
+                  },
+                  {
+                    label: 'Comisión',
+                    value: vendorMetrics?.bestMonth.commission ?? 0
+                  }
+                ]}
+              />
+            </div>
           </div>
         )}
       </div>

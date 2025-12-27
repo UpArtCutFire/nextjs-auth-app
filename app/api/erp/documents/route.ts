@@ -255,10 +255,69 @@ export async function POST(request: NextRequest) {
 
     console.log('[ERP DOCS] Enviando respuesta final con', documents.length, 'documentos');
 
+    // Obtener números de documento para consultar verificaciones y despachos
+    const documentNumbers = documents.map(d => d.NumDoc).filter((n): n is string => Boolean(n));
+
+    // Consultar verificaciones de pago existentes
+    const verifications = documentNumbers.length > 0 ? await prisma.paymentVerification.findMany({
+      where: {
+        documentNumber: { in: documentNumbers },
+      },
+      select: {
+        documentNumber: true,
+        documentType: true,
+        status: true,
+      }
+    }) : [];
+
+    // Consultar despachos existentes
+    const dispatches = documentNumbers.length > 0 ? await prisma.dispatch.findMany({
+      where: {
+        documentNumber: { in: documentNumbers },
+        status: { not: 'CANCELLED' } // Excluir cancelados
+      },
+      select: {
+        documentNumber: true,
+        documentType: true,
+        status: true,
+      }
+    }) : [];
+
+    console.log('[ERP DOCS] Verificaciones encontradas:', verifications.length);
+    console.log('[ERP DOCS] Despachos encontrados:', dispatches.length);
+
+    // Función para obtener estado de verificación
+    const getVerificationStatus = (docNumber: string, docType: string): 'none' | 'pending' | 'approved' | 'rejected' => {
+      const verification = verifications.find(
+        v => v.documentNumber === docNumber && v.documentType === docType
+      );
+      if (!verification) return 'none';
+      switch (verification.status) {
+        case 'PENDING': return 'pending';
+        case 'APPROVED': return 'approved';
+        case 'REJECTED': return 'rejected';
+        default: return 'none';
+      }
+    };
+
+    // Función para verificar si tiene despacho
+    const hasDispatch = (docNumber: string, docType: string): boolean => {
+      return dispatches.some(
+        d => d.documentNumber === docNumber && d.documentType === docType
+      );
+    };
+
+    // Enriquecer documentos con estados
+    const enrichedDocuments = documents.map(doc => ({
+      ...doc,
+      verificationStatus: getVerificationStatus(doc.NumDoc || '', doc.TipoDoc || ''),
+      hasDispatch: hasDispatch(doc.NumDoc || '', doc.TipoDoc || ''),
+    }));
+
     return NextResponse.json({
       success: true,
-      documents: documents,
-      totalCount: documents.length,
+      documents: enrichedDocuments,
+      totalCount: enrichedDocuments.length,
       userRole: user.perfil,
       userVendorCode: user.codigo_vendedor
     });

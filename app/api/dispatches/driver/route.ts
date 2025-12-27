@@ -16,44 +16,70 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const transportId = searchParams.get('transportId');
 
-    // Filtros base para despachos activos
-    const where: any = {
-      status: {
-        in: ['SCHEDULED', 'IN_TRANSIT', 'DELIVERED']
-      }
-    };
-
-    // Si se especifica un transporte, filtrar por él
-    if (transportId) {
-      where.transportId = transportId;
-    }
-
     // Para despachos entregados, solo mostrar los del día actual
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
 
+    // Construir condiciones de filtro
+    const conditions: any[] = [];
+
+    // Despachos programados con transporte
+    if (transportId) {
+      conditions.push({
+        status: 'SCHEDULED',
+        transportId: transportId
+      });
+      conditions.push({
+        status: 'IN_TRANSIT',
+        transportId: transportId
+      });
+      conditions.push({
+        status: 'DELIVERED',
+        transportId: transportId,
+        completedAt: {
+          gte: today,
+          lt: tomorrow
+        }
+      });
+    } else {
+      // Sin filtro de transporte: mostrar todos los programados y en tránsito
+      conditions.push({
+        status: 'SCHEDULED'
+      });
+      conditions.push({
+        status: 'IN_TRANSIT'
+      });
+      conditions.push({
+        status: 'DELIVERED',
+        completedAt: {
+          gte: today,
+          lt: tomorrow
+        }
+      });
+    }
+
+    // Siempre incluir RETIRO_LOCAL en tránsito (no tienen transporte)
+    conditions.push({
+      status: 'IN_TRANSIT',
+      tipoDespacho: 'RETIRO_LOCAL',
+      transportId: null
+    });
+
+    // Retiros locales entregados hoy
+    conditions.push({
+      status: 'DELIVERED',
+      tipoDespacho: 'RETIRO_LOCAL',
+      completedAt: {
+        gte: today,
+        lt: tomorrow
+      }
+    });
+
     const dispatches = await prisma.dispatch.findMany({
       where: {
-        OR: [
-          // Despachos programados o en tránsito (sin filtro de fecha)
-          {
-            ...where,
-            status: {
-              in: ['SCHEDULED', 'IN_TRANSIT']
-            }
-          },
-          // Despachos entregados solo del día actual
-          {
-            ...where,
-            status: 'DELIVERED',
-            completedAt: {
-              gte: today,
-              lt: tomorrow
-            }
-          }
-        ]
+        OR: conditions
       },
       include: {
         user: {
@@ -69,6 +95,13 @@ export async function GET(request: NextRequest) {
             patente: true,
             nombre: true,
             talla: true,
+          }
+        },
+        branch: {
+          select: {
+            id: true,
+            nombre: true,
+            direccion: true,
           }
         },
         deliveryPhotos: {
@@ -87,7 +120,12 @@ export async function GET(request: NextRequest) {
       ]
     });
 
-    return NextResponse.json(dispatches);
+    // Eliminar duplicados (pueden aparecer si un retiro local también cumple otras condiciones)
+    const uniqueDispatches = dispatches.filter((dispatch, index, self) =>
+      index === self.findIndex((d) => d.id === dispatch.id)
+    );
+
+    return NextResponse.json(uniqueDispatches);
   } catch (error) {
     console.error('Error al obtener despachos del conductor:', error);
     return NextResponse.json(

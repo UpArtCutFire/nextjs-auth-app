@@ -163,3 +163,80 @@ export interface PaymentVerificationResponse {
   error?: string;
   message?: string;
 }
+
+// =====================================================
+// Tipos para Dashboard de Métricas del Vendedor
+// =====================================================
+
+export interface VendorMetricsCurrentMonth {
+  totalDocuments: number;      // Total CT/NV del mes
+  verifiedDocuments: number;   // CT/NV con verificación APPROVED
+  pendingDocuments: number;    // CT/NV sin verificación
+  progressPercentage: number;  // (verified / total) * 100
+  grossSales: number;          // Suma de MntTotal
+}
+
+export interface MonthlyComparisonData {
+  month: string;               // "2025-12"
+  monthLabel: string;          // "Diciembre"
+  grossSales: number;          // Ventas brutas del mes
+  documentsCount: number;      // Cantidad de documentos
+}
+
+export interface CommissionHistoryData {
+  month: string;               // "2025-12"
+  monthLabel: string;          // "Diciembre"
+  commission: number;          // Comisión calculada
+}
+
+export interface BestMonthData {
+  month: string;               // "2025-12"
+  monthLabel: string;          // "Diciembre"
+  year: number;                // 2025
+  grossSales: number;          // Ventas brutas
+  commission: number;          // Comisión del mes
+}
+
+export interface MonthComparisonData {
+  previousMonth: {
+    label: string;
+    commission: number;
+    documentsTotal: number;
+    documentsVerified: number;
+  };
+  currentMonth: {
+    label: string;
+    commission: number;
+    documentsTotal: number;
+    documentsVerified: number;
+  };
+}
+
+export interface DistributionData {
+  name: string;                // "Verificados", "Pendientes"
+  value: number;
+  color: string;               // Color hex
+}
+
+export interface VendorMetrics {
+  currentMonth: VendorMetricsCurrentMonth;
+  monthlyComparison: MonthlyComparisonData[];
+  commissionsHistory: CommissionHistoryData[];
+  bestMonth: BestMonthData;
+  monthComparison: MonthComparisonData;
+  documentDistribution: DistributionData[];
+}
+
+export interface VendorInfo {
+  codigoVendedor: string;
+  porcentajeComision: number | null;
+  comisionBase: number | null;
+}
+
+export interface VendorMetricsResponse {
+  success: boolean;
+  metrics?: VendorMetrics;
+  vendorInfo?: VendorInfo;
+  selectedMonth?: string;
+  error?: string;
+}

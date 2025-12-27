@@ -98,6 +98,19 @@ export default function AdminVerificacionesPage() {
   const [paymentMethodFilter, setPaymentMethodFilter] = useState<string>('all');
   const [vendorFilter, setVendorFilter] = useState<string>('all');
 
+  // Filtro de mes/año (-1 significa "todos")
+  const [selectedMonth, setSelectedMonth] = useState<number>(-1);
+  const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
+
+  // Nombres de meses
+  const monthNames = [
+    'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+    'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
+  ];
+
+  // Generar array de años (últimos 3 años)
+  const availableYears = Array.from({ length: 3 }, (_, i) => new Date().getFullYear() - i);
+
   // Estados para edición y eliminación
   const [editingVerification, setEditingVerification] = useState<PaymentVerification | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
@@ -127,7 +140,7 @@ export default function AdminVerificacionesPage() {
   useEffect(() => {
     applyFilters();
     calculateStats();
-  }, [verifications, searchTerm, statusFilter, paymentMethodFilter, vendorFilter]);
+  }, [verifications, searchTerm, statusFilter, paymentMethodFilter, vendorFilter, selectedMonth, selectedYear]);
 
   const fetchVerifications = async () => {
     try {
@@ -157,9 +170,17 @@ export default function AdminVerificacionesPage() {
   const applyFilters = () => {
     let filtered = [...verifications];
 
+    // Filtro por mes/año (solo si no es "todos")
+    if (selectedMonth !== -1) {
+      filtered = filtered.filter(v => {
+        const date = new Date(v.createdAt);
+        return date.getMonth() === selectedMonth && date.getFullYear() === selectedYear;
+      });
+    }
+
     // Búsqueda por texto
     if (searchTerm) {
-      filtered = filtered.filter(v => 
+      filtered = filtered.filter(v =>
         v.documentNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
         v.user.nombre.toLowerCase().includes(searchTerm.toLowerCase()) ||
         v.comment.toLowerCase().includes(searchTerm.toLowerCase())
@@ -181,26 +202,43 @@ export default function AdminVerificacionesPage() {
       filtered = filtered.filter(v => v.user.id === vendorFilter);
     }
 
+    // Ordenar por prioridad: pendientes primero, luego por fecha
+    filtered = [...filtered].sort((a, b) => {
+      // Primero: pendientes antes que otros estados
+      if (a.status === 'PENDING' && b.status !== 'PENDING') return -1;
+      if (a.status !== 'PENDING' && b.status === 'PENDING') return 1;
+      // Segundo: ordenar por fecha más reciente
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    });
+
     setFilteredVerifications(filtered);
   };
 
   const calculateStats = () => {
-    const stats = verifications.reduce((acc, v) => {
+    // Filtrar por mes/año para las estadísticas (solo si no es "todos")
+    const monthFilteredVerifications = selectedMonth === -1
+      ? verifications
+      : verifications.filter(v => {
+          const date = new Date(v.createdAt);
+          return date.getMonth() === selectedMonth && date.getFullYear() === selectedYear;
+        });
+
+    const stats = monthFilteredVerifications.reduce((acc, v) => {
       acc.total++;
-      
+
       // Type-safe status counting
       const status = v.status.toLowerCase();
       if (status === 'pending') acc.pending++;
       else if (status === 'approved') acc.approved++;
       else if (status === 'rejected') acc.rejected++;
-      
+
       if (v.amount) {
         acc.totalAmount += v.amount;
         if (v.status === 'APPROVED') {
           acc.approvedAmount += v.amount;
         }
       }
-      
+
       return acc;
     }, {
       total: 0,
@@ -391,6 +429,62 @@ export default function AdminVerificacionesPage() {
             Actualizar
           </Button>
         </div>
+
+        {/* Selector de Mes/Año */}
+        <Card className="bg-gradient-to-r from-yellow-50 to-orange-50 border-yellow-200">
+          <CardContent className="py-4">
+            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+              <div className="flex items-center gap-2">
+                <Calendar className="h-5 w-5 text-yellow-600" />
+                <span className="font-semibold text-yellow-800">Período de Consulta:</span>
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2">
+                  <Label htmlFor="month-select" className="text-sm text-yellow-700">Mes:</Label>
+                  <Select
+                    value={selectedMonth.toString()}
+                    onValueChange={(value) => setSelectedMonth(parseInt(value))}
+                  >
+                    <SelectTrigger id="month-select" className="w-[140px] bg-white border-yellow-300">
+                      <SelectValue placeholder="Seleccionar mes" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="-1">Todos</SelectItem>
+                      {monthNames.map((name, index) => (
+                        <SelectItem key={index} value={index.toString()}>
+                          {name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                {selectedMonth !== -1 && (
+                  <div className="flex items-center gap-2">
+                    <Label htmlFor="year-select" className="text-sm text-yellow-700">Año:</Label>
+                    <Select
+                      value={selectedYear.toString()}
+                      onValueChange={(value) => setSelectedYear(parseInt(value))}
+                    >
+                      <SelectTrigger id="year-select" className="w-[100px] bg-white border-yellow-300">
+                        <SelectValue placeholder="Año" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {availableYears.map((year) => (
+                          <SelectItem key={year} value={year.toString()}>
+                            {year}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+                <Badge className="bg-yellow-500 text-white ml-2">
+                  {selectedMonth === -1 ? 'Todos los períodos' : `${monthNames[selectedMonth]} ${selectedYear}`}
+                </Badge>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
 
         {/* Estadísticas */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4">
