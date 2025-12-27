@@ -1,23 +1,20 @@
-import { NextRequest, NextResponse } from 'next/server';
+export const dynamic = "force-dynamic";
+
+import { NextResponse } from 'next/server';
 import { PrismaClient } from '@prisma/client';
-import { getServerSession } from 'next-auth/next';
+import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { writeFile, mkdir } from 'fs/promises';
 import { join } from 'path';
 import { existsSync } from 'fs';
+import { v4 as uuidv4 } from 'uuid';
 
 const prisma = new PrismaClient();
 
-// Configuración para App Router (Next.js 14+)
-// El límite de body se maneja automáticamente con formData
-export const dynamic = 'force-dynamic';
-export const maxDuration = 60; // 60 segundos de timeout para uploads grandes
+// Límites de validación (igual que payment-verifications: 5MB por foto)
+const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB por archivo
 
-// Límites de validación
-const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB por archivo
-const MAX_TOTAL_SIZE = 50 * 1024 * 1024; // 50MB total
-
-export async function POST(request: NextRequest) {
+export async function POST(request: Request) {
   try {
     const session = await getServerSession(authOptions);
     
@@ -59,31 +56,29 @@ export async function POST(request: NextRequest) {
     // Extraer archivos de fotos con validación de tamaño
     const photoFiles: File[] = [];
     let photoIndex = 0;
-    let totalSize = 0;
 
     while (true) {
       const photoFile = formData.get(`photo${photoIndex}`) as File;
-      if (!photoFile) break;
+      if (!photoFile || photoFile.size === 0) break;
 
-      // Validar tamaño individual
-      if (photoFile.size > MAX_FILE_SIZE) {
+      // Validar que sea imagen
+      if (!photoFile.type.startsWith('image/')) {
         return NextResponse.json(
-          { error: `La foto ${photoIndex + 1} excede el límite de 10MB` },
+          { error: `El archivo ${photoIndex + 1} no es una imagen válida` },
           { status: 400 }
         );
       }
 
-      totalSize += photoFile.size;
+      // Validar tamaño individual (5MB como payment-verifications)
+      if (photoFile.size > MAX_FILE_SIZE) {
+        return NextResponse.json(
+          { error: `La foto ${photoIndex + 1} excede el límite de 5MB. Por favor reduce el tamaño de la imagen.` },
+          { status: 400 }
+        );
+      }
+
       photoFiles.push(photoFile);
       photoIndex++;
-    }
-
-    // Validar tamaño total
-    if (totalSize > MAX_TOTAL_SIZE) {
-      return NextResponse.json(
-        { error: 'El tamaño total de las fotos excede el límite de 50MB' },
-        { status: 400 }
-      );
     }
 
     if (photoFiles.length === 0) {
@@ -93,7 +88,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    console.log(`[Complete Dispatch] Procesando ${photoFiles.length} fotos, tamaño total: ${(totalSize / 1024 / 1024).toFixed(2)}MB`);
+    console.log(`[Complete Dispatch] Procesando ${photoFiles.length} fotos`);
 
     // Crear directorio para fotos si no existe
     const uploadsDir = join(process.cwd(), 'public', 'uploads', 'delivery-photos');
@@ -105,10 +100,27 @@ export async function POST(request: NextRequest) {
     const photoPromises = photoFiles.map(async (file, index) => {
       const bytes = await file.arrayBuffer();
       const buffer = Buffer.from(bytes);
-      
-      // Generar nombre único para el archivo
-      const timestamp = Date.now();
-      const fileName = `${dispatchId}-${timestamp}-${index}.${file.name.split('.').pop()}`;
+
+      // Generar nombre único usando UUID (igual que payment-verifications)
+      let extension = 'jpg'; // Default para fotos de cámara
+
+      if (file.name && file.name.includes('.')) {
+        extension = file.name.split('.').pop()?.toLowerCase() || 'jpg';
+      } else if (file.type) {
+        // Usar el tipo MIME para determinar extensión
+        const mimeToExt: Record<string, string> = {
+          'image/jpeg': 'jpg',
+          'image/jpg': 'jpg',
+          'image/png': 'png',
+          'image/gif': 'gif',
+          'image/webp': 'webp',
+          'image/heic': 'heic',
+          'image/heif': 'heif'
+        };
+        extension = mimeToExt[file.type] || 'jpg';
+      }
+
+      const fileName = `${uuidv4()}.${extension}`;
       const filePath = join(uploadsDir, fileName);
       
       // Guardar archivo

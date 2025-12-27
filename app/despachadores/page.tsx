@@ -166,7 +166,7 @@ export default function DespachadorPage() {
 
     const newPhotos: File[] = [];
     const newPreviews: string[] = [];
-    const maxSize = 10 * 1024 * 1024; // 10MB por foto
+    const maxSize = 5 * 1024 * 1024; // 5MB por foto (igual que payment-verifications)
 
     Array.from(files).forEach((file) => {
       // Validar que sea imagen
@@ -177,7 +177,7 @@ export default function DespachadorPage() {
 
       // Validar tamaño
       if (file.size > maxSize) {
-        toast.error(`${file.name} excede el límite de 10MB`);
+        toast.error(`${file.name} excede el límite de 5MB`);
         return;
       }
 
@@ -236,12 +236,14 @@ export default function DespachadorPage() {
         setPhotoPreviews([]);
         fetchDispatches();
       } else {
-        const error = await response.json();
-        toast.error(error.message || 'Error al completar despacho');
+        const errorData = await response.json().catch(() => ({}));
+        const errorMsg = errorData.error || errorData.message || `Error del servidor (${response.status})`;
+        console.error('Error response:', response.status, errorData);
+        toast.error(errorMsg);
       }
     } catch (error) {
-      console.error('Error:', error);
-      toast.error('Error al completar despacho');
+      console.error('Error en fetch:', error);
+      toast.error('Error de conexión. Verifica tu internet e intenta de nuevo.');
     } finally {
       setActionLoading(null);
     }
@@ -553,7 +555,7 @@ export default function DespachadorPage() {
                   className="mb-2"
                 />
                 <p className="text-xs text-gray-500">
-                  Toma fotos con la cámara o selecciona de la galería (máx. 10MB por foto)
+                  Toma fotos con la cámara o selecciona de la galería (máx. 5MB por foto)
                 </p>
 
                 {/* Preview de fotos seleccionadas */}

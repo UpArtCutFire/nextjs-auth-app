@@ -9,9 +9,15 @@ const nextConfig = {
   typescript: {
     ignoreBuildErrors: false,
   },
-  images: { 
+  images: {
     unoptimized: true,
     domains: ['localhost'],
+  },
+  // Aumentar límite de body para subida de fotos desde móviles
+  experimental: {
+    serverActions: {
+      bodySizeLimit: '50mb',
+    },
   },
   async rewrites() {
     return [

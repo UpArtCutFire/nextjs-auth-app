@@ -113,6 +113,16 @@ const handlePhotoUpload = async () => {
 4. **Configuración de límite en API:**
    - Aumentar límite de body a 50MB para múltiples fotos
 
+5. **Fix: Extensión de archivo en móviles (2025-11-24 hotfix):**
+   - Problema: `file.name` puede estar vacío o sin extensión en fotos de cámara móvil
+   - Solución: Usar `file.type` (MIME type) para determinar extensión cuando `file.name` falla
+   - Mapeo MIME implementado: jpeg, png, gif, webp, heic, heif
+   - Default: `.jpg` para fotos de cámara sin metadata
+
+6. **Mejora de mensajes de error:**
+   - Mostrar error específico del servidor en lugar de mensaje genérico
+   - Diferencia entre errores de servidor y errores de conexión
+
 **Comandos para Rollback (si hay problemas):**
 ```bash
 # Revertir cambios en despachadores/page.tsx
